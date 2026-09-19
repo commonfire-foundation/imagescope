@@ -2,7 +2,7 @@
 import time
 from typing import Protocol
 
-from .contracts import AnalysisRequest, AnalyzerError, empty_result
+from .contracts import AnalysisRequest, AnalyzerError, empty_result, bounded_result
 from .images import prepare_image
 from .measurements import measure
 from .profiles.wallpaper import PROMPT_VERSION, VISION_PROMPT
@@ -63,4 +63,4 @@ def analyze(request: AnalysisRequest, *, backend: Backend | None = None, on_prog
     except (OSError, ValueError, KeyError, TypeError) as exc:
         result['error'] = {'code': 'analysis_failed', 'message': str(exc)}
     result['elapsed_seconds'] = round(time.monotonic() - started, 3)
-    return result
+    return bounded_result(result)

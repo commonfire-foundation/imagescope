@@ -40,10 +40,20 @@ Only invoke a screenshot pipeline when the screen content is intended for analys
 Use a wrapper to handle region-selection cancellation and clipboard/notification
 policy; the analyzer itself neither captures the screen nor changes the clipboard.
 
-Without output flags, the command prints a concise caption or dimensions to stdout
-and progress/errors to stderr. `--json` emits one terminal object. `--events=jsonl`
-emits hello, progress, and exactly one terminal result on stdout. Logs are never
-mixed into machine-output stdout. See `PROTOCOL.md` for the version-1 contract.
+Without output flags, the command prints a compact summary to stdout: dimensions,
+caption and search labels for descriptions, and a palette/luminance summary when
+measurements are requested. Output wraps to the terminal width. Progress and
+errors go to stderr. Interactive terminals show an animated spinner with the
+current stage and elapsed time, including while waiting for stdin or the model.
+The spinner clears on completion, failure, timeout, or cooperative cancellation.
+Redirected stderr and `TERM=dumb` use plain stage lines instead. No ANSI color or
+cursor-hiding sequences are used.
+
+`doctor` also prints a human-readable runtime/model summary by default.
+`--json` emits one terminal object. `--events=jsonl` emits hello, progress, and
+exactly one terminal result on stdout. Neither machine-output mode uses a spinner.
+Logs are never mixed into machine-output stdout. See `PROTOCOL.md` for the
+version-1 contract.
 
 In a source checkout, replace `imagescope` with `python -m imagescope`.
 Paths beginning with `-` can be supplied after `--`.
@@ -55,8 +65,10 @@ Paths beginning with `-` can be supplied after `--`.
   coarse edge-density measurements, with no model request.
 - `describe --measurements`: both; measured properties remain distinct from predictions.
 
-The tested wallpaper-v2 prompt, conservative label cleanup, 768px preview default,
-white transparency background, and Qwen JSON-continuation handling are preserved.
+The wallpaper-v3 profile preserves conservative label cleanup, the 768px preview
+default, white transparency background, and Qwen JSON-continuation handling.
+Version 3 adds enforced length limits: 1,000 characters per caption and 128 per
+label. Oversized predictions are rejected rather than silently truncated.
 Only the first frame/page is analyzed. EXIF orientation is applied. Predictions
 are not human-confirmed facts; no calibrated confidence score is supplied.
 Text detection is not OCR. Native image metadata is not rewritten.
@@ -79,7 +91,9 @@ differ from older results. Existing saved results are not rewritten.
 Safety ceilings remain: 64 MiB encoded input, 500 megapixels in source headers,
 and bounded decoder memory/time. This does not promise every 500MP image can
 fit the memory budget. Limits produce specific structured errors, not a blanket
-25MP rejection. HTTP replies remain bounded to 2 MiB. OS-enforced decoder limits
+25MP rejection. HTTP replies remain bounded to 2 MiB. Serialized results/events (including
+provenance, diagnostics, and the event envelope) are bounded to 1 MiB; an oversized
+result is replaced by a small `output_too_large` failure without partial data. OS-enforced decoder limits
 are required; unsupported platforms return `decoder_unavailable` rather than
 silently decoding without protection. Linux also ties the decoder's lifetime to
 its parent, so cancellation cannot leave an orphan decoder running.
@@ -109,6 +123,38 @@ Ollama manages concurrent requests. A shared scheduling broker is not included.
 The tool creates no database or cache. Applications decide what to retain; results
 contain source paths for file inputs and descriptive content that may be sensitive.
 The model runtime can independently retain a loaded model or its own logs.
+
+## Tested runtime
+
+Local 0.1.0-candidate smoke tests used Ollama 0.20.6, `qwen3-vl:4b`
+(Q4_K_M, digest prefix `1343d82ebee3`), a Ryzen 5 5600G, and an AMD Radeon
+RX 6600-family GPU. Ollama reported 100% GPU residency. Four requests covering a
+photo, illustrated wallpaper, visible text through stdin, and a transparent PNG
+returned valid results with measurements in approximately 6–14 seconds each;
+a repeated simple image took about 4 seconds. These are observations, not speed
+guarantees or a quality benchmark.
+
+Descriptions were broadly useful, but the model called an illustration a 3D
+render and a head-and-shoulders portrait “full body.” Tags can also contain generic
+or inferred terms despite the prompt. Treat medium/composition labels and text
+flags as predictions, not verified facts or OCR.
+
+Example human output for a simple transparent red-circle image (abridged):
+
+```text
+400 × 400 · PNG
+
+solid red circle on plain white background
+Subjects: circle
+Medium: abstract
+Tags: red, circle, solid, white, background, flat, minimalist, geometric
+
+Measurements
+  Palette: #ffffff #dc5a5a #da5252 #e48181 #f8e0e0 #db5757
+  Luminance: 0.702 · spread 0.373
+
+Done in 4.1s · model predictions, not verified facts
+```
 
 ## Python API
 

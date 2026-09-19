@@ -28,9 +28,18 @@ class OllamaBackend:
     name = 'ollama'
 
     def __init__(self, endpoint=DEFAULT_ENDPOINT, timeout=300, keep_alive=300, transport=None):
-        parsed = urlparse(endpoint)
-        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise AnalyzerError('invalid_request', 'Endpoint must be an HTTP(S) API URL without credentials, query, or fragment')
+        try:
+            if not isinstance(endpoint, str) or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in endpoint):
+                raise ValueError('Invalid URL characters')
+            parsed = urlparse(endpoint)
+            if (parsed.scheme not in ('http', 'https') or not parsed.hostname
+                    or parsed.username is not None or parsed.password is not None
+                    or parsed.query or parsed.fragment):
+                raise ValueError('Invalid API URL')
+            if parsed.port is not None and parsed.port < 1:
+                raise ValueError('Invalid port')
+        except ValueError as exc:
+            raise AnalyzerError('invalid_request', 'Endpoint must be an HTTP(S) API URL with a valid port and without credentials, whitespace, query, or fragment') from exc
         self.endpoint = endpoint.rstrip('/') + '/'
         self.deadline = time.monotonic() + timeout
         self.keep_alive = keep_alive
@@ -57,6 +66,7 @@ class OllamaBackend:
                 raise ValueError('Expected a JSON object')
             return value
         except HTTPError as exc:
+            exc.close()
             raise AnalyzerError('backend_error', f'Ollama returned HTTP {exc.code}') from exc
         except (TimeoutError, socket.timeout) as exc:
             raise AnalyzerError('timeout', 'Ollama request timed out') from exc

@@ -45,6 +45,8 @@ their own correlation IDs to the process they launch.
 Wallpaper predictions contain required fields: `caption`, `subjects`, `medium`,
 `mood`, `lighting`, `composition`, `tags`, `text_present`, `watermark_present`.
 Their schema and validation live in `imagescope/profiles/wallpaper.py`.
+Wallpaper-v3 limits captions to 1,000 characters and individual labels to 128;
+oversized predictions produce `invalid_response`, not truncated success data.
 
 Measurements/input/provenance can remain populated after a model failure. A failed
 request is still `status: error`: consumers must not mistake partial data for a
@@ -69,7 +71,14 @@ nothing may follow the terminal result. Inspect omits model-related progress;
 failures may end at any stage. Labels are human-readable and are not stable codes.
 No percentages, token-content stream, or job-control commands are implied.
 
-The desktop reader accepts at most 1 MiB per event and 2 MiB per request stream,
+The analyzer limits each serialized record to 1 MiB, including its terminating
+newline and the result-event envelope. This bound also applies to API results
+and plain JSON results with space reserved for that envelope. Oversized results
+become a minimal `output_too_large` failure; input, partial data, and diagnostics
+are discarded in that case. Doctor output is subject to the same record limit.
+
+The external Image Lab desktop reader (not shipped in this distribution) accepts
+at most 1 MiB per event and 2 MiB per request stream,
 requires newline termination, and bounds captured diagnostic stderr. It fails the
 job on malformed output, duplicate terminal results, missing hello/result,
 incompatible versions, process crashes, or a success record with nonzero exit.
@@ -91,7 +100,7 @@ the terminal record and process exit, with their own deadline.
 Initial error codes: `invalid_request`, `incompatible_protocol`, `analyzer_changed`,
 `invalid_input`, `unsupported_image`, `input_too_large`, `image_too_large`,
 `source_changed`, `model_missing`, `backend_unavailable`, `backend_error`,
-`invalid_response`, `timeout`, `cancelled`, `analysis_failed`. New error codes may
+`invalid_response`, `output_too_large`, `timeout`, `cancelled`, `analysis_failed`. New error codes may
 be added; unknown codes must still be treated as failures. English messages can
 change. Client-side malformed-result validation uses `protocol_error`.
 

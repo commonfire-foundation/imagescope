@@ -9,8 +9,10 @@ import threading
 from . import __version__
 from .backends.ollama import OllamaBackend
 from .contracts import (AnalysisRequest, AnalyzerError, DEFAULT_ENDPOINT, DEFAULT_MODEL,
-                        MAX_INPUT_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION, empty_result)
+                        MAX_INPUT_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION, empty_result,
+                        bounded_json, bounded_result)
 from .profiles.wallpaper import PROMPT_VERSION, VISION_PROMPT
+from .presentation import Progress, show_doctor, show_error, show_result
 
 
 def info():
@@ -57,20 +59,29 @@ def main(argv=None):
             result = {'status': 'ok', 'endpoint': args.endpoint, 'version': backend.request('version'),
                       'installed': backend.request('tags'), 'loaded': backend.request('ps'),
                       'note': 'Loaded-model size_vram reports GPU residency, not a measured inference-speed benchmark.'}
-            print(json.dumps(result, indent=2))
+            encoded = bounded_json(result)
+            if args.json:
+                print(encoded)
+            else:
+                show_doctor(result)
             return 0
         except AnalyzerError as exc:
-            print(json.dumps({'status':'error','error':{'code':exc.code,'message':str(exc)}}))
-            return 1
+            if args.json:
+                print(json.dumps({'status':'error','error':{'code':exc.code,'message':str(exc)}}))
+            else:
+                show_error(exc.code, str(exc))
+            return 2 if exc.code == 'invalid_request' else 1
 
     def emit(kind, **fields):
-        print(json.dumps({'protocol_version': PROTOCOL_VERSION, 'type': kind, **fields}), flush=True)
+        print(bounded_json({'protocol_version': PROTOCOL_VERSION, 'type': kind, **fields}), flush=True)
+
+    display = Progress(enabled=not (args.json or args.events))
 
     def progress(stage, label):
         if args.events:
             emit('progress', stage=stage, label=label)
         elif not args.json:
-            print(label, file=sys.stderr, flush=True)
+            display.update(label)
 
     request = AnalysisRequest(args.image if args.image is not None else b'', task=args.command,
         profile=args.profile, model=args.model, endpoint=args.endpoint, preview_size=args.preview_size,
@@ -100,6 +111,7 @@ def main(argv=None):
                 handlers[sig] = signal.signal(sig, handler)
             previous_alarm = signal.setitimer(signal.ITIMER_REAL, args.timeout)
         if args.stdin:
+            display.update('Reading image from stdin')
             data = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
             if len(data) > MAX_INPUT_BYTES:
                 raise AnalyzerError('input_too_large', 'Image exceeds the 64 MiB input limit')
@@ -121,16 +133,21 @@ def main(argv=None):
         result['error'] = {'code': 'invalid_input', 'message': str(exc)}
     finally:
         if previous_alarm is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        display.stop()
+        if previous_alarm is not None:
             signal.setitimer(signal.ITIMER_REAL, *previous_alarm)
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
+    result = bounded_result(result)
+    if result['error'] and result['error']['code'] in ('output_too_large', 'invalid_response'):
+        code = 1
     if args.events:
         emit('result', result=result)
     elif args.json:
-        print(json.dumps(result), flush=True)
+        print(bounded_json(result), flush=True)
     elif result['status'] == 'ok':
-        print(result['predictions']['caption'] if result['predictions'] else
-              f"{result['input']['width']} × {result['input']['height']} · {result['input']['format']}")
+        show_result(result)
     else:
-        print(f"{result['error']['code']}: {result['error']['message']}", file=sys.stderr)
+        show_error(result['error']['code'], result['error']['message'])
     return code

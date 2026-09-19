@@ -64,6 +64,29 @@ def strict_json_loads(data):
     return json.loads(data, parse_constant=reject)
 
 
+def bounded_json(value):
+    """Serialize a complete record, including its newline, within the wire budget."""
+    try:
+        text = json.dumps(value, allow_nan=False)
+    except (ValueError, TypeError) as exc:
+        raise AnalyzerError('invalid_response', 'Result contains invalid JSON values') from exc
+    if len(text.encode('utf-8')) + 1 > MAX_EVENT_BYTES:
+        raise AnalyzerError('output_too_large', 'Result exceeds the 1 MiB output limit')
+    return text
+
+
+def bounded_result(result):
+    """Reserve the event envelope even for API/JSON users; never truncate results."""
+    try:
+        bounded_json({'protocol_version': PROTOCOL_VERSION, 'type': 'result', 'result': result})
+        return result
+    except AnalyzerError as exc:
+        return {'schema_version': SCHEMA_VERSION, 'status': 'error',
+                'input': {'path': None}, 'measurements': None, 'predictions': None,
+                'provenance': {}, 'diagnostics': {}, 'elapsed_seconds': 0.0,
+                'error': {'code': exc.code, 'message': str(exc)}}
+
+
 def validate_result(result):
     """Validate untrusted process output before a consumer persists it."""
     from .profiles.wallpaper import validate_description

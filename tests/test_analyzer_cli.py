@@ -26,13 +26,16 @@ class CliTests(unittest.TestCase):
         return subprocess.run([sys.executable, '-m', 'imagescope', *map(str,args)],
                               cwd=ROOT, input=data, capture_output=True, timeout=10)
 
-    def server(self, missing=False, malformed=False):
+    def server(self, missing=False, malformed=False, delay=0):
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args): pass
             def do_GET(self):
                 body = {'models': [] if missing else [{'name':DEFAULT_MODEL,'digest':'test'}]} if self.path.endswith('tags') else {'version':'test'}
                 self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(body).encode())
             def do_POST(self):
+                if delay:
+                    import time
+                    time.sleep(delay)
                 self.rfile.read(int(self.headers['Content-Length']))
                 body = {'message':{'content':'broken' if malformed else json.dumps(VISION)},'done_reason':'stop'}
                 self.send_response(200); self.end_headers(); self.wfile.write(json.dumps(body).encode())
@@ -84,6 +87,80 @@ class CliTests(unittest.TestCase):
             p = self.run_cli(*args)
             self.assertNotEqual(p.returncode,0)
             self.assertEqual(json.loads(p.stdout)['error']['code'],code)
+
+    def test_human_output_and_doctor(self):
+        p = self.run_cli('describe', self.path, '--endpoint', self.server(), '--measurements')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(b'Tags: red', p.stdout)
+        self.assertIn(b'Measurements', p.stdout)
+        self.assertIn(b'Done in', p.stdout)
+        self.assertNotIn(b'\r', p.stderr)
+        self.assertNotIn(b'\x1b', p.stdout + p.stderr)
+        doctor = self.run_cli('doctor', '--endpoint', self.server())
+        self.assertEqual(doctor.returncode, 0, doctor.stderr)
+        self.assertIn(b'Ollama', doctor.stdout)
+        self.assertIn(b'Installed:', doctor.stdout)
+        failed = self.run_cli('describe', self.path, '--endpoint', self.server(missing=True))
+        self.assertEqual(failed.returncode, 1)
+        self.assertEqual(failed.stdout, b'')
+        self.assertIn(b'model_missing', failed.stderr)
+
+    def test_real_terminal_spinner_and_cleanup(self):
+        import os
+        import pty
+        import select
+        import time
+        # Exercise blocking HTTP, failure, timeout, SIGTERM, and narrow-terminal Ctrl-C.
+        for mode in ('success', 'failure', 'timeout', 'cancel', 'interrupt'):
+            with self.subTest(mode=mode):
+                master, slave = pty.openpty()
+                import fcntl
+                import struct
+                import termios
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 32 if mode == 'interrupt' else 80, 0, 0))
+                args = (['describe', str(self.path), '--endpoint', self.server(delay=0.7, malformed=mode == 'failure')]
+                        if mode in ('success', 'failure') else
+                        ['inspect', '--stdin', '--timeout', '0.7' if mode == 'timeout' else '10'])
+                p = subprocess.Popen([sys.executable, '-m', 'imagescope', *args], cwd=ROOT,
+                                     env={**os.environ, 'TERM': 'xterm'}, stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=slave)
+                try:
+                    output = b''
+                    cancelled = False
+                    deadline = time.monotonic() + 8
+                    while time.monotonic() < deadline:
+                        if select.select([master], [], [], 0.1)[0]:
+                            output += os.read(master, 65536)
+                        if mode in ('cancel', 'interrupt') and not cancelled and output.count(b'Reading image from stdin') >= 3 and p.poll() is None:
+                            import signal
+                            p.send_signal(signal.SIGINT if mode == 'interrupt' else signal.SIGTERM)
+                            cancelled = True
+                        if p.poll() is not None:
+                            while select.select([master], [], [], 0)[0]:
+                                output += os.read(master, 65536)
+                            break
+                    else:
+                        self.fail('Terminal request did not finish')
+                    expected = {'success': 0, 'failure': 1, 'timeout': 1, 'cancel': 130, 'interrupt': 130}[mode]
+                    self.assertEqual(p.returncode, expected, output)
+                    label = b'Generating image description' if mode in ('success', 'failure') else b'Reading image from stdin'
+                    self.assertGreaterEqual(output.count(label), 3, output)
+                    stdout = p.stdout.read()
+                    if mode == 'success':
+                        self.assertIn(b'Tags: red', stdout)
+                        self.assertTrue(output.endswith(b'\r' + b' ' * 79 + b'\r'), output)
+                    else:
+                        self.assertEqual(stdout, b'')
+                        self.assertIn({'failure': b'invalid_response', 'timeout': b'timeout', 'cancel': b'cancelled', 'interrupt': b'cancelled'}[mode], output)
+                        self.assertNotIn(label, output.split(b'Error')[-1] if mode not in ('cancel', 'interrupt') else output.split(b'Cancelled')[-1])
+                finally:
+                    if p.poll() is None:
+                        p.kill()
+                    p.wait()
+                    p.stdin.close()
+                    p.stdout.close()
+                    os.close(master)
+                    os.close(slave)
 
     def test_stdin_deadline_and_cancellation(self):
         for cancel in (False,True):
