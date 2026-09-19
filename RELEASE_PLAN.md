@@ -94,13 +94,16 @@ Do not redesign the protocol or expand scope to solve hypothetical future needs.
 
 ## Final verification record
 
-Local verification (2026-09-18):
+Local verification (2026-09-19):
 
+- Tested implementation commit: `5876717` (the subsequent verification-record
+  commit only updates this document).
 - 32 tests passed on each of Python 3.11.15, 3.12.13, 3.13.12, and 3.14.7.
 - Each version built both archives and passed fresh wheel and source-archive
   installation smoke tests outside the source package. License attribution,
   package version, presentation module, and decoder inclusion were checked.
 - Local evidence: `.tmp/matrix-*/` holds tests, build, and install logs/artifacts.
+  Final rebuilt archives are in `.tmp/release-candidate/dist/`.
   These are ignored local outputs, not durable hosted CI records.
 - Live checks: Ollama 0.20.6, qwen3-vl:4b Q4_K_M (digest prefix 1343d82ebee3),
   Ryzen 5 5600G / Radeon RX 6600-family GPU, with 100% GPU residency reported.
