@@ -37,7 +37,7 @@ Every terminal result has these fields:
 | `schema_version` | Integer 1 |
 | `status` | `ok` or `error` |
 | `input` | `path` (absolute string or null for bytes); after decoding: SHA-256 of encoded bytes, oriented dimensions, aspect ratio, format, frame count, alpha presence |
-| `measurements` | Object or null; luminance mean/std, palette, dHash64, 3×3 edge density |
+| `measurements` | Object or null; palette, color/luminance distributions, transparency, regional colors, intensity variation, symmetry, dHash/DCT hashes, and legacy luminance/edge measurements |
 | `predictions` | Selected profile's description object or null |
 | `provenance` | Task; description results additionally record backend, model inventory entry/digest, Ollama version, profile/version/prompt, preprocessing and generation settings |
 | `diagnostics` | Bounded diagnostics; backend timing and response termination details where available |
@@ -146,7 +146,7 @@ dHash, and edge density also use white-composited pixels, not the
 background-independent palette pixels.
 Preprocessing version 3 records this distinction and alpha resizing convention;
 measurement provenance records the requested palette size. Transparency metrics
-are deferred to pass 4b. This deliberately changes transparent-image measurement
+are specified below under measurements version 5. This deliberately changes transparent-image measurement
 semantics from version 2; opaque default behavior is retained. The RGB/HSL fields
 and palette-size option are additive under protocol/schema 1. Package 0.1.0 and
 the wallpaper prompt/profile remain unchanged.

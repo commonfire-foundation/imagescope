@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0rc1 — 2026-09-20
+
+First release candidate for 0.1.0. Git tag: `v0.1.0rc1`; distributed as a
+GitHub pre-release, not stable 0.1.0.
 
 - Extract the stateless analyzer from Image Lab as Imagescope.
 - Rename the Python package and CLI to `imagescope`.
@@ -16,5 +19,35 @@
   consumers pinning v2 or its prompt hash must refresh their task snapshots.
 - Report malformed endpoint URLs/ports as `invalid_request`, including in doctor.
 - Include the MIT license with OldJobobo attribution in release archives.
+
+### Image profiles and measurements
+
+- Add the built-in `general-v1` description profile: summary, subjects, and text
+  presence, alongside the default `wallpaper-v3` profile.
+- Add configurable palettes of 1–64 colors (default six), with HEX, RGB, HSL,
+  and approximate proportions. Preserve alpha during decoding; ignore invisible
+  pixels and weight partial transparency without an assumed background.
+- Add opacity-weighted color/luminance distributions, CIELAB ΔE76 palette
+  distances, transparency bounds/shares, and regional palettes/luminance.
+- Add regional intensity variation, mirror similarity, and an identified DCT
+  perceptual hash alongside the existing dHash and edge-density measurements.
+- Prepare input and requested measurements before contacting the model; retain
+  partial measurements and input metadata on inference failures.
+- Reject blank captions and clarify command-specific help while retaining hidden
+  compatibility options for `inspect`.
+
+### Pre-release compatibility notes
+
+- Preprocessing advances to version 3 and measurements to version 6. Transparent
+  palette results deliberately differ from the previous white-composited palette;
+  AI previews and legacy luminance/dHash/edge measurements remain white-composited.
+- Protocol/schema remain version 1. Consumers must accept additive measurement
+  fields and select prediction validation by profile. Previously saved results
+  are not rewritten.
+- Custom Python backends must accept the `profile` keyword on `describe` and
+  optional `settings` methods. Result validation requires matching current
+  profile identity, version, prompt, and prediction shape.
+- Qwen remains the default. No new inference backend or supported Gemma adapter
+  is included.
 
 Existing Image Lab installations are not automatically migrated.

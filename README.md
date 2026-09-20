@@ -1,13 +1,18 @@
 # Imagescope
 
 A stateless Linux command and Python library: image in, structured observation out.
+Local image understanding and measurement tools for applications, scripts, and people.
 No Qt, SQLite catalog, daemon, automatic model downloads, or persistent image history.
 The wallpaper organizer is a separate consumer, not part of this distribution.
 
 ## Install
 
 Requires Linux, Python 3.11+, Pillow, and NumPy. From this checkout, install
-in a virtual environment (the package is not currently published to PyPI):
+in a virtual environment (RC1 is `0.1.0rc1`; the package is not currently
+published to PyPI). Download RC1 wheel/source assets from the pre-release page
+and follow `RELEASE_NOTES.md`, or install from this checkout:
+
+https://github.com/commonfire-org/imagescope/releases/tag/v0.1.0rc1
 
 ```sh
 python -m venv .venv
@@ -258,9 +263,24 @@ The tool creates no database or cache. Applications decide what to retain; resul
 contain source paths for file inputs and descriptive content that may be sensitive.
 The model runtime can independently retain a loaded model or its own logs.
 
-## Tested runtime
+## Inference requirements and observed performance
 
-Local 0.1.0-candidate smoke tests used Ollama 0.20.6, `qwen3-vl:4b`
+`inspect` needs no model, GPU, or Ollama service. Descriptions require a running
+Ollama instance and an explicitly installed `qwen3-vl:4b` model (roughly 3.3 GB
+on disk). Model download size is **not** a RAM or VRAM requirement: runtime use
+also depends on context, image processing, concurrency, and Ollama's backend.
+No minimum RAM/VRAM configuration has been established. The tested machine has
+32 GiB RAM and an 8 GiB Radeon RX 6600 XT; these are test hardware details, not
+minimum requirements or a guarantee for other GPU/driver combinations.
+
+CPU inference is possible but substantially slower in the small local checks
+below. There is no Imagescope CPU/GPU selector; Ollama controls device placement.
+`--timeout` can increase the request deadline up to 3600 seconds, but does not
+solve insufficient memory or guarantee that a failed runner will recover.
+
+### GPU smoke check
+
+Earlier 0.1.0-candidate smoke tests used Ollama 0.20.6, `qwen3-vl:4b`
 (Q4_K_M, digest prefix `1343d82ebee3`), a Ryzen 5 5600G, and an AMD Radeon
 RX 6600-family GPU. Ollama reported 100% GPU residency. Four requests covering a
 photo, illustrated wallpaper, visible text through stdin, and a transparent PNG
@@ -273,21 +293,38 @@ render and a head-and-shoulders portrait “full body.” Tags can also contain 
 or inferred terms despite the prompt. Treat medium/composition labels and text
 flags as predictions, not verified facts or OCR.
 
-Example human output for a simple transparent red-circle image (abridged):
+### CPU comparison and optional-model caveat
+
+A later local test used Ollama 0.20.6 on the same machine with a per-request
+`num_gpu: 0` override in an experimental transport, not a shipped CLI option.
+Three small images (portrait, text card, transparent circle) were each analyzed
+with both profiles, using a 768px maximum preview, 4096-token context, and
+1024-token output limit. Qwen returned schema-valid output in all six requests
+and recognized the main content, with observed request times of 14–37 seconds.
+Those transport timings include image encoding/inference and model loading where
+applicable, but not the CLI's full decoding/measurement pipeline. Single runs
+and a tiny fixture set do not establish typical latency or minimum hardware.
+
+An experimental `gemma3:4b` comparison is **not supported integration**: its
+Vulkan runner failed twice with `ErrorDeviceLost`. CPU requests took approximately
+100–134 seconds and produced valid JSON but frequently incorrect descriptions.
+A short-prompt control worked on the text card, whereas the current general
+prompt did not; the underlying cause is not established. `--model` permits
+experimentation with installed Ollama models, not a promise of drop-in prompt or
+runtime compatibility. Qwen remains the default and the evaluated model.
+
+### Measurement output
+
+Current inspect output for the transparent red-circle fixture (abridged; model
+predictions omitted). Unlike the older white-composited palette, extracted colors
+now describe visible pixels without an assumed background:
 
 ```text
 400 × 400 · PNG
 
-solid red circle on plain white background
-Subjects: circle
-Medium: abstract
-Tags: red, circle, solid, white, background, flat, minimalist, geometric
-
 Measurements
-  Palette: #ffffff #dc5a5a #da5252 #e48181 #f8e0e0 #db5757
+  Palette: #d22c2c #d32c2c #d12c2c #d12d2d #d42e2e #cf2c2c
   Luminance: 0.702 · spread 0.373
-
-Done in 4.1s · model predictions, not verified facts
 ```
 
 ## Python API
@@ -340,6 +377,12 @@ versions are independent; consult `imagescope info --json` for discovery.
 
 ## Project status and licensing
 
-Initial standalone development release: 0.1.0. No remote repository or package
-registry publication is implied by this checkout. Licensed under the MIT License; see `LICENSE`.
-See `CONTRIBUTING.md` for development guidance.
+Initial standalone release candidate: **0.1.0rc1**, targeting 0.1.0. Treat it as
+pre-release software; internal Python APIs are not stable. The canonical public
+repository is:
+
+https://github.com/commonfire-org/imagescope
+
+No PyPI publication is implied. Licensed under the MIT License; see `LICENSE`.
+See `RELEASE_NOTES.md` for RC1
+installation and limitations, and `CONTRIBUTING.md` for development guidance.

@@ -1,2 +1,2 @@
-include PROTOCOL.md CONTRIBUTING.md CHANGELOG.md RELEASE_PLAN.md
+include PROTOCOL.md CONTRIBUTING.md CHANGELOG.md RELEASE_PLAN.md RELEASE_NOTES.md
 recursive-include tests *.py

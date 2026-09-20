@@ -1,9 +1,15 @@
 # Imagescope 0.1.0 release plan
 
+Current candidate: **0.1.0rc1**. Intended tag: `v0.1.0rc1`; intended release
+status: GitHub pre-release. Owner approval for creating the public CommonFIRE
+repository and publishing RC1 has been received. Publication remains gated on
+hosted CI and final artifact verification. The stable target remains 0.1.0. See `RELEASE_NOTES.md` for RC1 artifact-install
+instructions and known limitations.
+
 ## Target
 
 A small, dependable Linux CLI and Python library for local image measurements
-and Ollama-backed wallpaper descriptions. Ship as an initial development release,
+and Ollama-backed general and wallpaper descriptions. Ship as an initial development release,
 not a promise of universally accurate image recognition or a stable internal API.
 
 This checklist is the remaining work, not authorization to publish. Keep changes
@@ -61,12 +67,12 @@ smoke testing, not a benchmark suite or a claim of calibrated accuracy.
 
 ## 3. Prepare and verify the release candidate
 
-- [ ] Choose the public repository location and initial distribution channel.
-  A GitHub release with installable archives is sufficient for 0.1.0; PyPI is
-  optional. Check package-name availability before claiming or publishing there.
+- [x] Confirm public destination `commonfire-org/imagescope` and GitHub Releases
+  as the initial distribution channel. The public repository has been created
+  on GitHub Free. PyPI is not selected or authorized.
 - [x] Add Linux/development-status metadata and clarify that the desktop consumer
   mentioned in `PROTOCOL.md` is external, not included in this package.
-- [ ] Add repository/issues URLs once the destination is known.
+- [x] Add the canonical CommonFIRE repository/issues URLs to package metadata.
 - [x] Review the diff, preserve the OldJobobo license credit, and commit the
   intended source, tests, and docs. Exclude environments and build artifacts.
 - [x] Run the full suite on Linux/Python 3.11–3.14: the same matrix passed locally
@@ -80,10 +86,11 @@ artifact checks. Record the tested commit and a concise result below.
 
 ## 4. Release deliberately
 
-- [ ] Finalize the 0.1.0 changelog and installation instructions for the chosen
-  channel. Keep Linux-only support and Ollama/model prerequisites prominent.
-- [ ] With explicit owner approval, push, tag `v0.1.0`, and publish the tested
-  artifacts. Publish to PyPI only if separately chosen and authorized.
+- [x] Finalize the RC1 changelog and artifact installation instructions for
+  GitHub Releases. Linux-only support and Ollama prerequisites remain prominent.
+- [ ] With explicit owner approval, push, tag `v0.1.0rc1`, and publish the tested
+  RC1 artifacts as a pre-release. Promote to `v0.1.0` only after final acceptance.
+  Publish to PyPI only if separately chosen and authorized.
 - [ ] Verify a clean installation using the published instructions/artifact.
 
 ## Not required for 0.1.0
@@ -92,7 +99,77 @@ No new backends, plugin system, batch scheduler, GUI, automatic model downloads,
 Windows/macOS support, benchmark infrastructure, or automated publishing pipeline.
 Do not redesign the protocol or expand scope to solve hypothetical future needs.
 
-## Final verification record
+## RC1 verification
+
+Candidate `0.1.0rc1` uses implementation baseline `a343a38` plus the local
+version/metadata and release-documentation changes. No inference or measurement
+algorithms changed during RC1 preparation. Final metadata now identifies the
+public CommonFIRE repository; the release commit and tag identify the candidate.
+
+- 88 tests passed on each of Python 3.11.15, 3.12.13, 3.13.12, and 3.14.7.
+- Each interpreter built RC1 wheel/source archives and passed fresh installed
+  smoke tests for both formats. Installed metadata and runtime versions agree.
+- Evidence and the runner are under `.tmp/rc1/`; these are ignored local records.
+  The final handoff directory is `.tmp/rc1/artifacts/`, containing the wheel,
+  source archive, and `SHA256SUMS`. Checksums detect changes, not publisher identity.
+- RC1 release notes provide artifact-based installation without inventing a
+  public repository or package-index URL. Package classification is Beta;
+  protocol/schema remain 1, preprocessing 3, measurements 6, wallpaper-v3,
+  and general-v1 are unchanged.
+- Owner approval for RC1 publication was received after local verification.
+  Public repository and metadata are now configured. Hosted CI and final artifact
+  checks gate publication; the actual-terminal visual check remains disclosed
+  as pending for stable 0.1.0, not claimed as completed for RC1.
+- Publication evidence is the tagged commit, its hosted Actions run, and the
+  release assets/checksums. Do not advertise RC1 as stable 0.1.0.
+
+## Pre-RC1 preparation verification
+
+Verified against implementation commit `a343a38`, with the release-documentation
+updates in this preparation pass. No production source changed in this pass.
+Package version remains 0.1.0, unreleased.
+
+| Python | Full suite | Wheel + source build | Installed wheel / source smoke |
+| --- | --- | --- | --- |
+| 3.11.15 | 88 passed | passed | both passed |
+| 3.12.13 | 88 passed | passed | both passed |
+| 3.13.12 | 88 passed | passed | both passed |
+| 3.14.7 | 88 passed | passed | both passed |
+
+- Fresh test and installation environments live under
+  `.tmp/commonfire-prep/matrix-<version>/`. Tests use synthetic images and a fake
+  local HTTP server; installed smoke checks run away from the source package.
+- Reproduction: each interpreter creates a venv, installs `.[dev]`, runs
+  `python -m unittest discover -s tests -v`, builds with `python -m build`, then
+  installs each archive in its own venv and runs `tests/smoke_installed.py` from
+  a separate working directory. The local runner is
+  `.tmp/commonfire-prep/run-matrix.sh`; CI specifies the same supported matrix.
+- All eight archives were inspected for the new modules, decoder/presentation
+  inclusion, retained OldJobobo license attribution, and exclusion of local
+  `.tmp`/`.venv` contents. All checks passed.
+- Refreshed the unreleased changelog for profiles, measurements, alpha handling,
+  partial failures, and custom-backend migration requirements. README now
+  separates GPU smoke observations from the small CPU comparison and explicitly
+  states that minimum hardware requirements have not been established.
+- The earlier GPU smoke record below applies to the earlier candidate, not to
+  every new feature. The current implementation's CPU comparison covered both
+  profiles: Qwen produced valid JSON in all six requests and recognized main
+  content, with known label errors. Gemma remains experimental and unsupported;
+  its Vulkan crash and prompt-sensitive CPU results do not block the Qwen-based
+  release scope. No inference accuracy guarantee is implied.
+- `git remote -v` returned no remotes. No repository was created, remote added,
+  history pushed, tag created, or registry publication attempted.
+- Artifacts/logs are ignored local verification evidence, not hosted CI or final
+  published release assets. Rebuild final artifacts after publication metadata
+  and release documentation are finalized.
+
+Remaining owner/release actions: actual-terminal visual check, confirmation and
+creation of the public repository/channel, real repository/issues metadata,
+channel-specific install instructions, hosted CI, and explicit publication
+approval. The changelog content is refreshed but remains unreleased; no release
+or readiness claim substitutes for these outstanding checks.
+
+## Earlier candidate verification record
 
 Local verification (2026-09-19):
 
