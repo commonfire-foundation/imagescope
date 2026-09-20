@@ -25,33 +25,44 @@ See `CHANGELOG.md` and `PROTOCOL.md` for details and migration requirements.
 
 ## Install and verify
 
-Requires Linux and Python 3.11 or later. From a directory containing the RC1
-artifacts, verify checksums and install the wheel in a virtual environment:
+Requires Linux, Python 3.11 or later, and an installed `uv`. Recommended on
+Omarchy: use uv's isolated tool environment, not system Python. From a directory
+containing the downloaded RC1 wheel and `SHA256SUMS`:
 
 ```sh
-sha256sum -c SHA256SUMS
-python3 -m venv .venv
-.venv/bin/python -m pip install ./imagescope-0.1.0rc1-py3-none-any.whl
-.venv/bin/imagescope --version
-.venv/bin/imagescope info --json
-.venv/bin/imagescope inspect image.png --palette-size 16 --json
+sha256sum --check --ignore-missing SHA256SUMS
+uv tool install --no-python-downloads ./imagescope-0.1.0rc1-py3-none-any.whl
+imagescope --version
+imagescope info --json
+imagescope inspect image.png --palette-size 16 --json
 ```
 
-The version command should report `0.1.0rc1`. Pip may download Pillow and NumPy;
-these instructions are not an offline dependency bundle. The source archive is
-an alternative to the wheel:
+Confirm the wheel checksum is `OK`; the version should report `0.1.0rc1`.
+Dependencies may be downloaded, but the command requires an existing compatible
+Python instead of downloading one. If the command is not on PATH, inspect
+`uv tool dir --bin`; `uv tool update-shell` is an explicit opt-in to editing
+shell configuration, followed by opening a new terminal.
+
+To reinstall or change versions, verify the desired wheel and use
+`uv tool install --force --no-python-downloads ./<actual-wheel-filename>`.
+To remove the managed environment and command:
 
 ```sh
-.venv/bin/python -m pip install ./imagescope-0.1.0rc1.tar.gz
+uv tool uninstall imagescope
 ```
+
+Uninstall leaves Ollama, models, images, downloaded archives, shared uv caches,
+and any shell PATH edits intact. README includes pipx alternatives and a
+checkout-venv workflow. This documentation update also works with the existing
+RC1 artifacts; it does not replace the already published release assets.
 
 For descriptions, install/start Ollama separately. The following pull is an
 explicit approximately 3.3 GB model download, not part of package installation:
 
 ```sh
 ollama pull qwen3-vl:4b
-.venv/bin/imagescope doctor
-.venv/bin/imagescope describe image.png --profile general --json
+imagescope doctor
+imagescope describe image.png --profile general --json
 ```
 
 ## Limitations

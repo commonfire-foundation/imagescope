@@ -1,44 +1,163 @@
 # Imagescope
 
-A stateless Linux command and Python library: image in, structured observation out.
-Local image understanding and measurement tools for applications, scripts, and people.
-No Qt, SQLite catalog, daemon, automatic model downloads, or persistent image history.
-The wallpaper organizer is a separate consumer, not part of this distribution.
+**Local image analysis using AI and deterministic measurements.**
+
+Imagescope turns an image into structured observations: colors, transparency,
+luminance, spatial patterns, similarity hashes, and optional AI descriptions.
+Use it from the terminal, in shell pipelines, or as a Python library inside
+another application.
+
+Measurements work without a model. Descriptions run through local Ollama.
+Measured properties and model predictions stay separate, so applications can
+use either without treating a generated description as a verified fact.
+
+## What you can do
+
+- **Inspect image assets:** extract up to 64 colors in HEX, RGB, and HSL;
+  measure transparency, visible bounds, luminance, and regional color distribution.
+- **Describe visible content:** generate a summary, subject labels, and
+  text-presence predictions for photographs, screenshots, illustrations, and
+  other supported images.
+- **Build comparison workflows:** use perceptual hashes, mirror similarity, and
+  local intensity variation as inputs to your own tools—not as quality scores
+  or proof that two images are identical.
+- **Integrate analysis:** consume JSON, stream JSONL progress/results, pass image
+  bytes through stdin, or call the Python API.
+
+Wallpaper captions and search tags are one optional description profile.
+Imagescope is not a wallpaper manager, image editor, or catalog: it analyzes
+one image per request, does not modify the source, and keeps no image history.
+
+## Quick start
+
+After installation, measure an image without Ollama:
+
+```sh
+imagescope inspect image.png --palette-size 16
+imagescope inspect image.png --json
+```
+
+With Ollama running and `qwen3-vl:4b` explicitly installed, describe its content
+or combine predictions with measurements:
+
+```sh
+imagescope describe image.jpg --profile general
+imagescope describe image.jpg --profile general --measurements --json
+```
+
+The examples select `general` explicitly. RC1 still defaults to the `wallpaper`
+profile when `--profile` is omitted; this documentation does not change that
+behavior.
 
 ## Install
 
-Requires Linux, Python 3.11+, Pillow, and NumPy. From this checkout, install
-in a virtual environment (RC1 is `0.1.0rc1`; the package is not currently
-published to PyPI). Download RC1 wheel/source assets from the pre-release page
-and follow `RELEASE_NOTES.md`, or install from this checkout:
+Requires Linux and Python 3.11+. **Use `uv tool` for a user installation on
+Omarchy**; it isolates Pillow/NumPy and exposes `imagescope` without changing
+system Python or requiring sudo. This assumes `uv` is installed; check with
+`uv --version`. Imagescope is not published to PyPI, so install a downloaded
+release artifact rather than `uv tool install imagescope`.
+
+Download the RC1 wheel and `SHA256SUMS` from:
 
 https://github.com/commonfire-org/imagescope/releases/tag/v0.1.0rc1
 
+From the download directory:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+uv tool install --no-python-downloads ./imagescope-0.1.0rc1-py3-none-any.whl
+imagescope --version
+imagescope info --json
+```
+
+Confirm the wheel is reported `OK`. The checksum file also lists the optional
+source archive; `--ignore-missing` allows downloading just the wheel. Checksums
+detect changed bytes, not publisher identity. Dependencies may be downloaded;
+this is not an offline bundle. `--no-python-downloads` requires an existing
+compatible interpreter; optionally select one with `--python /path/to/python3`.
+
+If `imagescope` is not found, check `uv tool dir --bin` and your PATH. To opt into
+uv updating your shell configuration, run `uv tool update-shell`, then open a new
+terminal. Do not use sudo or overwrite an unrelated executable to resolve a
+name conflict.
+
+### Upgrade or reinstall
+
+Download and verify the desired release wheel, then repeat installation with
+`--force`. For example, reinstall RC1:
+
+```sh
+uv tool install --force --no-python-downloads ./imagescope-0.1.0rc1-py3-none-any.whl
+```
+
+For an upgrade, substitute the newly downloaded wheel's actual filename. This
+explicit artifact workflow also supports rollback to a previous wheel; do not
+rely on `uv tool upgrade imagescope` to discover GitHub releases.
+
+### Uninstall
+
+```sh
+uv tool uninstall imagescope
+```
+
+This removes uv's Imagescope environment and managed command. It does not remove
+Ollama, models, images, downloaded release files, shared uv caches, or PATH edits
+made by `uv tool update-shell`. No catalog or persistent image history needs
+cleanup. Uninstall with the same tool that installed the application.
+
+### Alternative: pipx
+
+If you already use pipx, it provides the same isolated-tool approach:
+
+```sh
+pipx install ./imagescope-0.1.0rc1-py3-none-any.whl
+# Reinstall or replace with a newly downloaded wheel:
+pipx install --force ./imagescope-0.1.0rc1-py3-none-any.whl
+pipx uninstall imagescope
+```
+
+Use `pipx ensurepath` only if you want it to update shell PATH configuration,
+then open a new terminal. Choose uv **or** pipx, not both for the same command.
+
+### Development checkout
+
+Use a project virtual environment rather than a managed tool installation:
+
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install .
+.venv/bin/python -m pip install -e '.[dev]'
 .venv/bin/imagescope --version
 ```
+
+Remove only that project-owned `.venv` when it is no longer needed; do not delete
+a shared environment. See `CONTRIBUTING.md` for tests and builds.
 
 Image descriptions additionally require a running Ollama instance and an explicitly
 installed `qwen3-vl:4b` model. `inspect` works without Ollama. Installation of this
 Python package does not install or download models. Use `imagescope doctor`
 to inspect the existing runtime before opting into any model download yourself.
 
-## Commands
+## Command-line workflows
+
+Use JSONL for progress and a terminal result, inspect the available profiles,
+or check your Ollama runtime:
+
+```sh
+imagescope describe image.jpg --profile general --measurements --events=jsonl
+imagescope info --json
+imagescope doctor --json
+```
+
+For wallpaper-oriented captions and search labels, select that profile:
 
 ```sh
 imagescope describe image.jpg --profile wallpaper --json
-imagescope inspect image.jpg --json
-imagescope describe image.jpg --measurements --events=jsonl
-imagescope info --json
-imagescope doctor --json
 ```
 
 Read encoded image bytes from stdin, without creating an image file:
 
 ```sh
-grim -g "$(slurp)" - | imagescope describe --stdin --json
+grim -g "$(slurp)" - | imagescope describe --stdin --profile general --json
 ```
 
 Only invoke a screenshot pipeline when the screen content is intended for analysis.
@@ -46,7 +165,7 @@ Use a wrapper to handle region-selection cancellation and clipboard/notification
 policy; the analyzer itself neither captures the screen nor changes the clipboard.
 
 Without output flags, the command prints a compact summary to stdout: dimensions,
-caption and search labels for descriptions, and a palette/luminance summary when
+a description and profile-specific labels, and measurement summaries when
 measurements are requested. Output wraps to the terminal width. Progress and
 errors go to stderr. Interactive terminals show an animated spinner with the
 current stage and elapsed time, including while waiting for stdin or the model.
@@ -63,14 +182,18 @@ version-1 contract.
 In a source checkout, replace `imagescope` with `python -m imagescope`.
 Paths beginning with `-` can be supplied after `--`.
 
-## Tasks and behavior
+## Analysis modes
 
-- `describe --profile wallpaper`: captions and search tags (the default).
-- `describe --profile general`: general visible-content summary, subjects, and
-  text-presence detection, without wallpaper-specific style/search labels.
-- `inspect`: objective dimensions, hash, luminance, palette, perceptual hash, and
-  coarse edge-density measurements, with no model request.
-- `describe --measurements`: both; measured properties remain distinct from predictions.
+| Mode | Output | Model required? |
+| --- | --- | --- |
+| `inspect` | Image metadata and deterministic pixel measurements | No |
+| `describe --profile general` | Visible-content summary, subjects, and text presence | Yes |
+| `describe --profile wallpaper` | Caption and search-oriented style/content labels | Yes |
+| `describe --profile general --measurements` | General description plus separate measurements | Yes |
+
+`wallpaper` remains the default description profile in RC1. Select `general`
+for the general-purpose description shape; measurements are independent of the
+selected profile.
 
 Both commands share input, output, timeout, palette-size, and protocol controls. Only
 `describe --help` lists inference options: `--profile`, `--model`, `--endpoint`,
@@ -97,8 +220,8 @@ General-v1 predictions contain `summary` (one to three factual sentences),
 `subjects` (up to 12 concise labels), and `text_present` (boolean, not OCR).
 Summary text must be nonblank and at most 1,000 characters; labels are limited to
 128 characters each. Empty subject arrays are valid. Results identify the selected
-profile/version/prompt, and predictions are validated against that profile, not
-against wallpaper fields. These are model observations, not verified facts.
+profile/version/prompt, and predictions are validated against the selected
+profile's schema. These are model observations, not verified facts.
 
 The wallpaper-v3 profile preserves conservative label cleanup, the 768px preview
 default, white transparency background, and Qwen JSON-continuation handling.
@@ -333,9 +456,12 @@ Measurements
 from pathlib import Path
 from imagescope import AnalysisRequest, analyze
 
-result = analyze(AnalysisRequest(Path('image.jpg'), measurements=True))
+result = analyze(AnalysisRequest(
+    Path('image.jpg'), profile='general', measurements=True,
+))
 if result['status'] == 'ok':
-    print(result['predictions']['caption'])
+    print(result['predictions']['summary'])
+    print(result['measurements']['palette'])
 else:
     print(result['error']['code'], result['error']['message'])
 ```
@@ -361,12 +487,12 @@ allocate a roughly 118-megapixel source image, so allow adequate memory.
 CI tests supported Python versions on Linux, builds wheel/source archives, and
 checks the installed CLI from outside the source tree.
 
-## Integration and compatibility
+## Integration contract
 
-Imagescope was extracted from Image Lab. It is a separate distribution and does
-not provide the old `image_analyzer` import or `image-analyze` command. Existing
-consumers must explicitly migrate their dependency, imports, and subprocess
-command. Image Lab is not modified by this extraction.
+Each request produces a result containing input metadata, measurements,
+predictions, provenance, and status. Applications own storage, indexing, batch
+scheduling, and any actions based on those results. A failed model request may
+still include useful measurements; always check status before using predictions.
 
 The supported entry points are the CLI/JSON protocol in `PROTOCOL.md` and
 `imagescope.AnalysisRequest`, `imagescope.AnalyzerError`, and `imagescope.analyze`.
@@ -377,7 +503,7 @@ versions are independent; consult `imagescope info --json` for discovery.
 
 ## Project status and licensing
 
-Initial standalone release candidate: **0.1.0rc1**, targeting 0.1.0. Treat it as
+Release candidate: **0.1.0rc1**, targeting 0.1.0. Treat it as
 pre-release software; internal Python APIs are not stable. The canonical public
 repository is:
 

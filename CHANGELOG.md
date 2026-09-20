@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Recommend `uv tool` for isolated Omarchy/user installation, with explicit
+  artifact replacement, PATH guidance, and managed uninstall. Document pipx as
+  an alternative and project virtual environments for development.
+- Add an opt-in, repository-isolated uv install/run/replace/uninstall smoke check.
+  Published RC1 artifacts and application behavior are unchanged.
+
 ## 0.1.0rc1 — 2026-09-20
 
 First release candidate for 0.1.0. Git tag: `v0.1.0rc1`; distributed as a
