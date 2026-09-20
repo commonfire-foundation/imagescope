@@ -11,6 +11,26 @@ python -m venv .venv
 .venv/bin/python -m build
 ```
 
+### Managed-tool installation smoke check
+
+With `uv` already installed, build a wheel and run the opt-in lifecycle check:
+
+```sh
+.venv/bin/python -m build --outdir .tmp/tool-dist
+.venv/bin/python tests/smoke_uv_tool.py .tmp/tool-dist/imagescope-0.1.0rc1-py3-none-any.whl
+```
+
+Use the actual wheel filename after a version change. The check installs into
+unique `.tmp/uv-tool-smoke-*` tool/bin/cache directories, runs installed-package
+and PATH-based CLI checks, replaces the installation using `--force`, and
+uninstalls it. It verifies removal of the managed command/environment while
+preserving test image/user files. It does not edit shell configuration, use
+sudo, download Python/models, or touch the user's real tool installation.
+Dependency downloads may require network access; command logs are retained in
+that ignored directory. This is separate from the offline-model unittest suite.
+Replacing the same wheel verifies reinstall mechanics, not a cross-version
+migration guarantee. CI's wheel/source checks remain independent of uv.
+
 Keep the core free of GUI, catalog, queue, and persistence dependencies. Tests
 must run without downloading models or requiring a real inference service.
 Use synthetic images rather than personal photos or copyrighted fixture sets.
