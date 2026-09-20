@@ -81,13 +81,14 @@ def show_result(result, stream=None):
     paragraph(f"{data['width']} × {data['height']} · {data['format']}", stream)
     if prediction:
         print(file=stream)
-        paragraph(prediction['caption'] or 'No caption returned.', stream)
-        for key, label in [('subjects', 'Subjects'), ('medium', 'Medium'), ('mood', 'Mood'),
-                           ('lighting', 'Lighting'), ('composition', 'Composition'), ('tags', 'Tags')]:
+        from .profiles import get_profile
+        profile = get_profile(result['provenance']['profile'])
+        paragraph(prediction[profile.summary_field], stream)
+        for key, label in profile.labels:
             value = prediction[key]
             if value:
                 paragraph(f"{label}: {', '.join(value) if isinstance(value, list) else value}", stream)
-        flags = [label for key, label in [('text_present', 'text'), ('watermark_present', 'watermark')]
+        flags = [label for key, label in profile.flags
                  if prediction[key]]
         if flags:
             paragraph('Detected: ' + ', '.join(flags), stream)
@@ -95,9 +96,53 @@ def show_result(result, stream=None):
     if measurements:
         print(file=stream)
         paragraph('Measurements', stream)
-        paragraph('Palette: ' + '  '.join(color['hex'] for color in measurements['palette']), stream, indent='  ')
+        palette = '  '.join(color['hex'] for color in measurements['palette'])
+        paragraph('Palette: ' + (palette or 'none (no visible pixels)'), stream, indent='  ')
         paragraph(f"Luminance: {measurements['mean_luminance']:.3f} · spread {measurements['luminance_std']:.3f}",
                   stream, indent='  ')
+        distribution = measurements.get('luminance_distribution')
+        if distribution is not None:
+            percentiles = distribution['percentiles']
+            if percentiles is None:
+                paragraph('Visible-color statistics: none (no visible pixels)', stream, indent='  ')
+            else:
+                paragraph('Visible luminance p05/50/95: ' + ' / '.join(
+                    f'{percentiles[key]:.3f}' for key in ('p05', 'p50', 'p95')), stream, indent='  ')
+                neutral = measurements['color_distribution']['near_neutral_fraction']
+                paragraph(f"Opacity shares: neutral {neutral:.1%} · near-black "
+                          f"{distribution['near_black_fraction']:.1%} · near-white "
+                          f"{distribution['near_white_fraction']:.1%}", stream, indent='  ')
+        alpha = measurements.get('transparency')
+        if alpha is not None:
+            paragraph(f"Transparency: {alpha['transparent_fraction']:.1%} transparent · "
+                      f"{alpha['translucent_fraction']:.1%} translucent", stream, indent='  ')
+            bounds = alpha['visible_bounds']
+            paragraph(f"Visible bounds ({alpha['width']} × {alpha['height']} working pixels): " +
+                      (str(bounds) if bounds is not None else 'none'), stream, indent='  ')
+        spatial = measurements.get('spatial_color')
+        if spatial is not None:
+            paragraph('Regional colors / visible luminance (3×3, left to right):', stream, indent='  ')
+            for row in range(3):
+                entries = []
+                for region in spatial['regions'][row * 3:(row + 1) * 3]:
+                    entries.append(f"{region['palette'][0]['hex']} / {region['mean_luminance']:.3f}"
+                                   if region['palette'] else 'none')
+                paragraph(f"Row {row + 1}: " + ' | '.join(entries), stream, indent='    ')
+        detail = measurements.get('local_detail')
+        if detail is not None:
+            paragraph('Intensity variation (3×3):', stream, indent='  ')
+            for row in detail['intensity_std_3x3']:
+                paragraph(' / '.join(f'{value:.3f}' for value in row), stream, indent='    ')
+        symmetry = measurements.get('symmetry')
+        if symmetry is not None:
+            paragraph(f"Mirror similarity: left/right {symmetry['left_right']:.3f} · "
+                      f"top/bottom {symmetry['top_bottom']:.3f}", stream, indent='  ')
+        phash = measurements.get('phash64')
+        if phash is not None:
+            paragraph(f"pHash: {phash['hash']} ({phash['algorithm']})", stream, indent='  ')
+        pairs = measurements.get('palette_distances', [])
+        if pairs:
+            paragraph(f"Minimum palette ΔE76: {min(pair['delta_e76'] for pair in pairs):.2f}", stream, indent='  ')
     print(file=stream)
     paragraph(f"Done in {result['elapsed_seconds']:.1f}s" + (' · model predictions, not verified facts' if prediction else ''), stream)
 

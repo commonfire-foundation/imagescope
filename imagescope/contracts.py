@@ -35,18 +35,26 @@ class AnalysisRequest:
     measurements: bool = False
     timeout: float = 300
     keep_alive: int = 300
+    palette_size: int = 6
 
     def validate(self):
         if not isinstance(self.source, (Path, bytes)):
             raise AnalyzerError('invalid_request', 'source must be a pathlib.Path or image bytes')
-        if self.task not in ('inspect', 'describe') or self.profile != 'wallpaper':
-            raise AnalyzerError('invalid_request', 'Supported tasks: inspect, describe; supported profile: wallpaper')
+        if self.task not in ('inspect', 'describe'):
+            raise AnalyzerError('invalid_request', 'Supported tasks: inspect, describe')
+        from .profiles import get_profile
+        try:
+            get_profile(self.profile)
+        except ValueError as exc:
+            raise AnalyzerError('invalid_request', str(exc)) from exc
         if self.preview_size not in (256, 512, 768, 1024):
             raise AnalyzerError('invalid_request', 'preview_size must be 256, 512, 768, or 1024')
         if type(self.timeout) not in (int, float) or not math.isfinite(self.timeout) or not 0 < self.timeout <= 3600:
             raise AnalyzerError('invalid_request', 'timeout must be between 0 and 3600 seconds')
         if type(self.keep_alive) is not int or not 0 <= self.keep_alive <= 86400:
             raise AnalyzerError('invalid_request', 'keep_alive must be between 0 and 86400 seconds')
+        if type(self.palette_size) is not int or not 1 <= self.palette_size <= 64:
+            raise AnalyzerError('invalid_request', 'palette_size must be an integer from 1 to 64')
         if not isinstance(self.model, str) or not self.model.strip():
             raise AnalyzerError('invalid_request', 'model must be a nonempty name')
 
@@ -89,7 +97,7 @@ def bounded_result(result):
 
 def validate_result(result):
     """Validate untrusted process output before a consumer persists it."""
-    from .profiles.wallpaper import validate_description
+    from .profiles import get_profile
     def invalid():
         raise AnalyzerError('protocol_error', 'Invalid analyzer result contract')
     if not isinstance(result, dict) or type(result.get('schema_version')) is not int or result['schema_version'] != SCHEMA_VERSION:
@@ -120,7 +128,11 @@ def validate_result(result):
             invalid()
         if result['provenance'].get('task') == 'describe':
             try:
-                validate_description(result.get('predictions'))
+                profile = get_profile(result['provenance'].get('profile'))
+                if (result['provenance'].get('profile_version') != profile.version
+                        or result['provenance'].get('prompt') != profile.prompt):
+                    invalid()
+                profile.validate(result.get('predictions'))
             except (ValueError, TypeError):
                 invalid()
         elif result['provenance'].get('task') != 'inspect' or result['predictions'] is not None:

@@ -11,14 +11,15 @@ from .backends.ollama import OllamaBackend
 from .contracts import (AnalysisRequest, AnalyzerError, DEFAULT_ENDPOINT, DEFAULT_MODEL,
                         MAX_INPUT_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION, empty_result,
                         bounded_json, bounded_result)
-from .profiles.wallpaper import PROMPT_VERSION, VISION_PROMPT
+from .profiles import PROFILES, get_profile
 from .presentation import Progress, show_doctor, show_error, show_result
 
 
 def info():
     return {'name': 'imagescope', 'version': __version__, 'protocol_version': PROTOCOL_VERSION,
             'schema_version': SCHEMA_VERSION, 'default_model': DEFAULT_MODEL,
-            'profiles': {'wallpaper': {'version': PROMPT_VERSION, 'prompt': VISION_PROMPT}}}
+            'profiles': {name: {'version': profile.version, 'prompt': profile.prompt}
+                         for name, profile in PROFILES.items()}}
 
 
 def main(argv=None):
@@ -35,13 +36,17 @@ def main(argv=None):
         p = sub.add_parser(command, help='Pixel measurements only' if command == 'inspect' else 'Generate a semantic description')
         p.add_argument('image', nargs='?', type=Path)
         p.add_argument('--stdin', action='store_true', help='Read one encoded image from stdin (64 MiB maximum)')
-        p.add_argument('--profile', choices=['wallpaper'], default='wallpaper')
-        p.add_argument('--model', default=DEFAULT_MODEL)
-        p.add_argument('--endpoint', default=DEFAULT_ENDPOINT, help='Explicit nonlocal URL opts into sending images there')
-        p.add_argument('--preview-size', type=int, choices=[256,512,768,1024], default=768)
-        p.add_argument('--measurements', action='store_true', help='Also compute pixel measurements during description')
+        # Preserve previously documented inspect flags as hidden compatibility options.
+        def inference_help(text):
+            return text if command == 'describe' else argparse.SUPPRESS
+        p.add_argument('--profile', choices=list(PROFILES), default='wallpaper', help=inference_help('Description profile'))
+        p.add_argument('--model', default=DEFAULT_MODEL, help=inference_help('Installed Ollama model'))
+        p.add_argument('--endpoint', default=DEFAULT_ENDPOINT, help=inference_help('Explicit nonlocal URL opts into sending images there'))
+        p.add_argument('--preview-size', type=int, choices=[256,512,768,1024], default=768, help=inference_help('Maximum AI preview dimension'))
+        p.add_argument('--measurements', action='store_true', help=inference_help('Also compute pixel measurements during description'))
+        p.add_argument('--palette-size', type=int, default=6, metavar='N', help='Maximum extracted colors (1–64; default: 6)' + ('; requires --measurements' if command == 'describe' else ''))
         p.add_argument('--timeout', type=float, default=300, help='Whole-request deadline in seconds, including stdin (Linux)')
-        p.add_argument('--keep-alive', type=int, default=300, help='Ollama model residency in seconds; 0 requests immediate unload')
+        p.add_argument('--keep-alive', type=int, default=300, help=inference_help('Ollama model residency in seconds; 0 requests immediate unload'))
         output = p.add_mutually_exclusive_group()
         output.add_argument('--json', action='store_true', help='One terminal JSON result on stdout')
         output.add_argument('--events', choices=['jsonl'], help='Versioned hello/progress/result records on stdout')
@@ -50,7 +55,8 @@ def main(argv=None):
         p.add_argument('--expect-prompt-sha256', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.command == 'info':
-        print(json.dumps(info()) if args.json else f'imagescope {__version__} · protocol 1 · wallpaper {PROMPT_VERSION}')
+        print(json.dumps(info()) if args.json else f'imagescope {__version__} · protocol 1 · ' +
+              ' · '.join(f'{name} {profile.version}' for name, profile in PROFILES.items()))
         return 0
     if args.command == 'doctor':
         try:
@@ -85,7 +91,8 @@ def main(argv=None):
 
     request = AnalysisRequest(args.image if args.image is not None else b'', task=args.command,
         profile=args.profile, model=args.model, endpoint=args.endpoint, preview_size=args.preview_size,
-        measurements=args.measurements, timeout=args.timeout, keep_alive=args.keep_alive)
+        measurements=args.measurements, timeout=args.timeout, keep_alive=args.keep_alive,
+        palette_size=args.palette_size)
     result = empty_result(request)
     handlers = {}
     previous_alarm = None
@@ -99,8 +106,9 @@ def main(argv=None):
         if args.protocol_version != PROTOCOL_VERSION:
             raise AnalyzerError('incompatible_protocol', 'This analyzer supports protocol version 1')
         import hashlib
-        if ((args.expect_profile_version and args.expect_profile_version != PROMPT_VERSION)
-                or (args.expect_prompt_sha256 and args.expect_prompt_sha256 != hashlib.sha256(VISION_PROMPT.encode()).hexdigest())):
+        profile = get_profile(args.profile)
+        if ((args.expect_profile_version and args.expect_profile_version != profile.version)
+                or (args.expect_prompt_sha256 and args.expect_prompt_sha256 != hashlib.sha256(profile.prompt.encode()).hexdigest())):
             raise AnalyzerError('analyzer_changed', 'Analyzer changed since queuing; retry with the current model/prompt')
         if threading.current_thread() is threading.main_thread():
             def cancel(signum, frame):

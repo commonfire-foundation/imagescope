@@ -34,6 +34,8 @@ def validate_description(value):
                 raise ValueError(f"Invalid label list: {key}")
         if "enum" in spec and item not in spec["enum"]:
             raise ValueError(f"Invalid medium: {item}")
+    if not value['caption'].strip():
+        raise ValueError('Caption must contain non-whitespace text')
     return value
 
 

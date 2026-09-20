@@ -16,7 +16,18 @@ from .contracts import (AnalyzerError, MAX_INPUT_BYTES, MAX_SOURCE_PIXELS,
 EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif'}
 
 
+def white_composite(image):
+    """RGB view for inference and non-palette measurements, without mutation."""
+    if image.mode == 'RGB':
+        return image
+    rgba = image.convert('RGBA')
+    background = Image.new('RGBA', rgba.size, 'white')
+    background.alpha_composite(rgba)
+    return background.convert('RGB')
+
+
 def prepare_image(source):
+    """Return metadata and an oriented, bounded RGB/RGBA image retaining alpha."""
     try:
         if isinstance(source, Path):
             before = source.stat()
@@ -53,7 +64,7 @@ def prepare_image(source):
             with Image.open(io.BytesIO(base64.b64decode(result['image'], validate=True))) as preview:
                 if max(preview.size) > WORKING_IMAGE_SIZE:
                     raise ValueError('Decoder returned an oversized preview')
-                image = preview.convert('RGB')
+                image = preview.convert('RGBA' if 'A' in preview.getbands() else 'RGB')
         except (ValueError, KeyError, TypeError) as exc:
             raise AnalyzerError('decode_failed', 'Image decoder returned an invalid preview') from exc
         metadata['sha256'] = hashlib.sha256(data).hexdigest()

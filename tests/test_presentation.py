@@ -76,7 +76,7 @@ class PresentationTests(unittest.TestCase):
                                   'subjects': ['landscape'], 'medium': 'illustration', 'mood': [],
                                   'lighting': [], 'composition': [], 'tags': ['red', 'wide'],
                                   'text_present': True, 'watermark_present': False},
-                  'measurements': None, 'elapsed_seconds': 1.25}
+                  'measurements': None, 'elapsed_seconds': 1.25, 'provenance': {'profile': 'wallpaper'}}
         with patch('imagescope.presentation.columns', return_value=32):
             show_result(result, stream)
         text = stream.getvalue()

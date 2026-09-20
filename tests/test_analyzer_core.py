@@ -18,7 +18,7 @@ class FakeBackend:
     def check_model(self, model):
         return {'name': model, 'digest': 'test-digest'}, {'version': 'test'}
 
-    def describe(self, image, model, preview_size):
+    def describe(self, image, model, preview_size, *, profile):
         return dict(VISION), {}
 
 
@@ -54,13 +54,61 @@ class CoreTests(unittest.TestCase):
 
     def test_partial_measurements_and_stable_error(self):
         backend = FakeBackend()
-        backend.describe = lambda *args: (_ for _ in ()).throw(AnalyzerError('invalid_response', 'bad JSON', {'reason': 'length'}))
+        backend.describe = lambda *args, **kwargs: (_ for _ in ()).throw(AnalyzerError('invalid_response', 'bad JSON', {'reason': 'length'}))
         result = analyze(AnalysisRequest(self.path, measurements=True), backend=backend)
         validate_result(result)
         self.assertEqual(result['error']['code'], 'invalid_response')
-        self.assertTrue(result['measurements'])
+        self.assertTrue(result['measurements']['color_distribution'])
+        self.assertTrue(result['measurements']['luminance_distribution'])
+        self.assertIn('palette_distances', result['measurements'])
+        self.assertEqual(result['measurements']['transparency']['visible_bounds'], [0, 0, 120, 60])
+        self.assertEqual(len(result['measurements']['spatial_color']['regions']), 9)
+        self.assertEqual(result['measurements']['local_detail']['intensity_std_3x3'], [[0.] * 3] * 3)
+        self.assertEqual(result['measurements']['symmetry']['left_right'], 1)
+        self.assertEqual(result['measurements']['phash64']['hash'], '0000000000000000')
         self.assertIsNone(result['predictions'])
         self.assertEqual(result['diagnostics']['reason'], 'length')
+
+    def test_preprocessing_precedes_backend(self):
+        from unittest.mock import Mock
+        backend = Mock()
+        for options in ({}, {'preview_size': 5}):
+            result = analyze(AnalysisRequest(b'bad image', **options), backend=backend)
+            self.assertEqual(result['error']['code'], 'invalid_request' if options else 'invalid_input')
+        backend.check_model.assert_not_called()
+        backend.describe.assert_not_called()
+
+    def test_model_check_failures_retain_measurements(self):
+        for code in ('backend_unavailable', 'model_missing'):
+            with self.subTest(code=code):
+                backend = FakeBackend()
+                backend.check_model = lambda *_: (_ for _ in ()).throw(AnalyzerError(code, 'failed'))
+                result = analyze(AnalysisRequest(self.path, measurements=True), backend=backend)
+                validate_result(result)
+                self.assertEqual(result['status'], 'error')
+                self.assertEqual(result['error']['code'], code)
+                self.assertTrue(result['measurements'])
+                self.assertEqual(result['input']['sha256'], hashlib.sha256(self.path.read_bytes()).hexdigest())
+                self.assertEqual(result['provenance']['measurements_version'], 6)
+
+    def test_preprocessing_uses_request_timeout_budget(self):
+        clock = [100.0]
+        from imagescope.images import prepare_image
+        def prepare(source):
+            prepared = prepare_image(source)
+            clock[0] += 4
+            return prepared
+        with patch('imagescope.api.time.monotonic', side_effect=lambda: clock[0]), \
+                patch('imagescope.api.prepare_image', side_effect=prepare), \
+                patch('imagescope.backends.ollama.OllamaBackend', return_value=FakeBackend()) as factory:
+            result = analyze(AnalysisRequest(self.path, timeout=10))
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(factory.call_args.args[1], 6)
+            factory.reset_mock()
+            result = analyze(AnalysisRequest(self.path, timeout=3, measurements=True))
+            self.assertEqual(result['error']['code'], 'timeout')
+            self.assertTrue(result['measurements'])
+            factory.assert_not_called()
 
     def test_limits_and_invalid_input(self):
         for source, code in [(b'not an image', 'invalid_input'), (self.path.parent / 'missing.png', 'invalid_input')]:
@@ -86,6 +134,6 @@ class CoreTests(unittest.TestCase):
         stages = []
         result = analyze(AnalysisRequest(self.path), backend=FakeBackend(), on_progress=lambda stage,label: stages.append(stage))
         self.assertEqual(result['status'], 'ok')
-        self.assertEqual(stages, ['checking', 'preparing', 'generating'])
+        self.assertEqual(stages, ['preparing', 'checking', 'generating'])
         for options in ({'preview_size': 5}, {'timeout': float('nan')}, {'keep_alive': -1}, {'task': 'ocr'}):
             self.assertEqual(analyze(AnalysisRequest(self.path, **options))['error']['code'], 'invalid_request')

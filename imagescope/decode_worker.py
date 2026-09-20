@@ -40,14 +40,16 @@ def decode(data, max_pixels):
             original.draft('RGB', target_size)
             reduced = original.size != original_size
             # Other formats may require full decoding; the child has a hard
-            # address-space/CPU budget. Shrink before orientation or RGBA copies.
-            original.thumbnail((WORKING_IMAGE_SIZE, WORKING_IMAGE_SIZE), Image.Resampling.LANCZOS)
-            image = ImageOps.exif_transpose(original).convert('RGBA')
-            background = Image.new('RGBA', image.size, 'white')
-            background.alpha_composite(image)
-            image = background.convert('RGB')
+            # address-space/CPU budget. Shrink before orientation copies.
+            # Convert indexed/LA transparency before shrinking: RGBA resize uses
+            # premultiplied channels, so hidden RGB cannot bleed into visible color.
+            working = original.convert('RGBA') if metadata['has_alpha_channel'] else original
+            working.thumbnail((WORKING_IMAGE_SIZE, WORKING_IMAGE_SIZE), Image.Resampling.LANCZOS)
+            image = ImageOps.exif_transpose(working).convert('RGBA' if metadata['has_alpha_channel'] else 'RGB')
             metadata['preprocessing'] = {
-                'version': 2, 'orientation': 'exif', 'alpha_background': '#ffffff', 'frame': 0,
+                'version': 3, 'orientation': 'exif', 'alpha_background': '#ffffff', 'frame': 0,
+                'palette_alpha': 'opacity-weighted-no-background',
+                'alpha_resize': 'pillow-premultiplied-srgb8-lanczos',
                 'decoder': 'pillow-jpeg-reduced' if reduced else 'pillow-bounded',
                 'working_width': image.width, 'working_height': image.height,
                 'downsampled': image.size != (width, height)}

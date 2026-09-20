@@ -3,14 +3,14 @@ import time
 from typing import Protocol
 
 from .contracts import AnalysisRequest, AnalyzerError, empty_result, bounded_result
-from .images import prepare_image
-from .measurements import measure
-from .profiles.wallpaper import PROMPT_VERSION, VISION_PROMPT
+from .images import prepare_image, white_composite
+from .measurements import measure, MEASUREMENTS_VERSION
+from .profiles import get_profile
 
 
 class Backend(Protocol):
     def check_model(self, model): ...
-    def describe(self, image, model, preview_size): ...
+    def describe(self, image, model, preview_size, *, profile): ...
 
 
 def analyze(request: AnalysisRequest, *, backend: Backend | None = None, on_progress=None):
@@ -30,30 +30,38 @@ def analyze(request: AnalysisRequest, *, backend: Backend | None = None, on_prog
 
     try:
         request.validate()
-        result['provenance']['preprocessing'] = {'version': 2, 'orientation': 'exif',
+        profile = get_profile(request.profile)
+        result['provenance']['preprocessing'] = {'version': 3, 'orientation': 'exif',
                                                 'alpha_background': '#ffffff', 'frame': 0}
-        if request.task == 'describe':
-            progress('checking', 'Checking local model')
-            if backend is None:
-                from .backends.ollama import OllamaBackend
-                backend = OllamaBackend(request.endpoint, request.timeout, request.keep_alive)
-            identity, version = backend.check_model(request.model)
-            result['provenance'].update(backend=getattr(backend, 'name', type(backend).__name__), model=identity, ollama_version=version,
-                profile=request.profile, profile_version=PROMPT_VERSION, prompt=VISION_PROMPT,
-                preprocessing={'version': 2, 'orientation': 'exif', 'alpha_background': '#ffffff',
-                               'frame': 0, 'preview_format': 'jpeg', 'jpeg_quality': 90},
-                settings=backend.settings(request.preview_size) if hasattr(backend, 'settings')
-                         else {'preview_size': request.preview_size})
         progress('preparing', 'Preparing image')
         metadata, image = prepare_image(request.source)
         result['provenance']['preprocessing'].update(metadata.pop('preprocessing'))
         result['input'].update(metadata)
         if request.measurements or request.task == 'inspect':
-            result['measurements'] = measure(image)
-            result['provenance']['measurements_version'] = 2
+            result['measurements'] = measure(image, request.palette_size)
+            result['provenance']['measurements_version'] = MEASUREMENTS_VERSION
+            result['provenance']['measurement_settings'] = {'palette_size': request.palette_size}
         if request.task == 'describe':
+            progress('checking', 'Checking local model')
+            if backend is None:
+                from .backends.ollama import OllamaBackend
+                backend = OllamaBackend(request.endpoint, request.timeout - (time.monotonic() - started), request.keep_alive)
+            identity, version = backend.check_model(request.model)
+            result['provenance'].update(backend=getattr(backend, 'name', type(backend).__name__), model=identity, ollama_version=version,
+                profile=profile.name, profile_version=profile.version, prompt=profile.prompt,
+                preprocessing={**result['provenance']['preprocessing'],
+                               'preview_format': 'jpeg', 'jpeg_quality': 90},
+                settings=backend.settings(request.preview_size, profile=profile.name) if hasattr(backend, 'settings')
+                         else {'preview_size': request.preview_size})
             progress('generating', 'Generating image description')
-            result['predictions'], result['diagnostics'] = backend.describe(image, request.model, request.preview_size)
+            predictions, diagnostics = backend.describe(
+                white_composite(image), request.model, request.preview_size, profile=profile.name)
+            result['diagnostics'] = diagnostics
+            try:
+                profile.validate(predictions)
+            except (ValueError, TypeError) as exc:
+                raise AnalyzerError('invalid_response', str(exc)) from exc
+            result['predictions'] = profile.clean(predictions)
         if time.monotonic() - started > request.timeout:
             raise AnalyzerError('timeout', 'Analyzer request timed out')
         result.update(status='ok', error=None)

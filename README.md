@@ -60,10 +60,40 @@ Paths beginning with `-` can be supplied after `--`.
 
 ## Tasks and behavior
 
-- `describe`: the versioned `wallpaper` profile generates captions and search tags.
+- `describe --profile wallpaper`: captions and search tags (the default).
+- `describe --profile general`: general visible-content summary, subjects, and
+  text-presence detection, without wallpaper-specific style/search labels.
 - `inspect`: objective dimensions, hash, luminance, palette, perceptual hash, and
   coarse edge-density measurements, with no model request.
 - `describe --measurements`: both; measured properties remain distinct from predictions.
+
+Both commands share input, output, timeout, palette-size, and protocol controls. Only
+`describe --help` lists inference options: `--profile`, `--model`, `--endpoint`,
+`--preview-size`, `--keep-alive`, and `--measurements`. Inspect always measures;
+old invocations with these flags remain accepted and validated as hidden
+compatibility options, without affecting the measurements.
+
+Images are decoded and requested measurements computed before contacting Ollama.
+If model checks or generation fail, JSON/JSONL results retain that partial data
+and input metadata with `status: error`; human mode still reports the error.
+
+Profiles are built in, selected explicitly with `--profile`; no plugins are loaded.
+`imagescope info --json` lists each profile's version and exact prompt. The Python
+API accepts `AnalysisRequest(path, profile='general')`. Both profiles share input
+preparation, optional measurements, model transport, deadlines, and error handling.
+`inspect` remains independent of profiles and never contacts a model.
+
+```sh
+imagescope describe image.jpg --profile general --json
+imagescope describe image.png --profile general --measurements --palette-size 8
+```
+
+General-v1 predictions contain `summary` (one to three factual sentences),
+`subjects` (up to 12 concise labels), and `text_present` (boolean, not OCR).
+Summary text must be nonblank and at most 1,000 characters; labels are limited to
+128 characters each. Empty subject arrays are valid. Results identify the selected
+profile/version/prompt, and predictions are validated against that profile, not
+against wallpaper fields. These are model observations, not verified facts.
 
 The wallpaper-v3 profile preserves conservative label cleanup, the 768px preview
 default, white transparency background, and Qwen JSON-continuation handling.
@@ -79,14 +109,118 @@ preview is then reduced to the requested size (768px by default). JPEG decoding
 uses native reduced-resolution loading before allocating the raster. Other
 formats may require a full raster internally, but decoding happens in a separate
 process with a 1.5 GiB address-space budget, a CPU budget below 30 seconds, and a
-30-second wall-clock limit. EXIF orientation and white alpha compositing happen
-after reduction, avoiding full-size intermediate copies.
+30-second wall-clock limit. Alpha-bearing images convert to RGBA before reduction
+so indexed transparency and hidden RGB are handled correctly; those copies remain
+inside the decoder's resource budget. EXIF orientation follows reduction.
 
 Original oriented dimensions and SHA-256 always describe the original input,
-not the working preview. Preprocessing version 2 records working dimensions,
-decoder strategy, and whether downsampling occurred. Measurements version 2 is
-computed from the bounded working image; sampled values/perceptual hashes may
-differ from older results. Existing saved results are not rewritten.
+not the working preview. Preprocessing version 3 records working dimensions,
+decoder strategy, downsampling, and alpha handling. Measurements version 6 adds
+regional intensity variation, mirror similarity, and a DCT perceptual hash to
+version 5's transparency/spatial colors and version 4's color/luminance statistics. Legacy luminance mean/spread,
+dHash, and edge density still use a white composite. Existing saved results are
+not rewritten.
+
+### Extracted colors
+
+```sh
+imagescope inspect image.png --palette-size 64 --json
+imagescope describe image.png --measurements --palette-size 8 --events=jsonl
+```
+
+`--palette-size` accepts 1–64, including 16, 24, 32, 48, and 64; the default remains
+six. It is a maximum, not a padding target: limited-color images return only
+available quantized colors. Palette extraction is bounded to a 256×256 thumbnail
+and returns approximate proportions. Describe still needs `--measurements`.
+
+Each machine-output entry contains lowercase `hex`, integer `rgb` channels
+0–255, `hsl` as hue degrees [0, 360), saturation/lightness percentages [0, 100]
+rounded to two decimals, and `fraction` rounded to four decimals. Neutral hue is
+0. Representations describe the same quantized RGB color. Human output displays
+HEX; JSON/JSONL always include all three representations.
+
+Fully transparent pixels and their hidden RGB values are ignored; partially
+transparent pixels are weighted by opacity. Proportions use total visible opacity,
+not canvas area. Fully transparent input has an empty palette. The AI still sees
+a white-composited preview: extracted palette colors have **no assumed background**
+and are not necessarily colors in that preview. Alpha-aware resizing uses
+premultiplied encoded sRGB with 8-bit precision, not linear-light color mixing.
+Opaque default extraction keeps the existing behavior. See `PROTOCOL.md` for
+quantization, rounding, and resizing details. No semantic theme roles or generated
+Base16/Base24 schemes are implied by extracting 16 or 24 colors.
+
+### Color and luminance distributions
+
+Inspect and `describe --measurements` also emit:
+
+- `color_distribution`: a 12-bin hue histogram, HSL saturation/lightness
+  percentiles, and near-neutral opacity share (saturation <= 10%).
+- `luminance_distribution`: linear-sRGB luminance percentiles and near-black
+  (<= 0.01) / near-white (>= 0.95) opacity shares.
+- `palette_distances`: all unordered palette pairs with CIELAB D65 ΔE76 distances.
+  These compare the emitted palette colors, not semantic theme roles.
+
+Distributions use at most 256×256 pixels, ignore hidden transparent RGB, and
+weight partial opacity without assuming a background. Percentiles are p05, p25,
+p50, p75, p95 using the inverse weighted empirical CDF (no interpolation).
+Fractions round to six decimals. Hue bins cover 30 degrees each and exclude
+near-neutral pixels; without chromatic pixels the histogram is null. Fully
+transparent images have null distribution members and no palette pairs.
+
+Human output summarizes visible luminance, neutral/black/white shares, and the
+minimum palette distance; JSON/JSONL contain the complete statistics. The legacy
+`mean_luminance` can differ because it measures the **white composite**. These
+statistics are not beauty, image-quality, or suitability scores. `PROTOCOL.md`
+specifies units, rounding, color conversions, and thresholds.
+
+### Transparency and regional colors
+
+`transparency` reports the fraction of fully transparent and partially transparent
+pixels, plus visible-content bounds before white compositing. Counts are unweighted
+canvas shares; human output shows percentages. Bounds are half-open
+`[left, top, right, bottom]` in the **oriented working image**, whose dimensions
+are included. They are not full-source coordinates. Fully transparent input has
+null bounds; even alpha 1 counts as visible. Downsampling can change these counts
+and soften or remove tiny features.
+
+`spatial_color` divides that working image into a fixed 3×3 grid, in row-major
+order. Each region contains coordinates, up to three dominant colors with local
+opacity-weighted fractions, and alpha-weighted linear-sRGB mean luminance.
+Cropping happens before regional thumbnail reduction (at most 256×256), avoiding
+cross-region color mixing. The three-color regional maximum is independent of
+`--palette-size`. Transparent or zero-area cells have no colors and null luminance;
+tiny images have trailing empty cells rather than invented pixels.
+
+These fields run in inspect and `describe --measurements`, including partial
+results on inference failure. Human output shows a compact regional summary;
+JSON/JSONL include every region and color.
+
+### Detail, symmetry, and perceptual similarity
+
+Requested measurements also include:
+
+- `local_detail.intensity_std_3x3`: regional grayscale population standard
+  deviation in [0,0.5] on a 192×192 working view, rounded to six decimals.
+- `symmetry.left_right` and `symmetry.top_bottom`: one minus mean absolute
+  mirrored intensity difference on that view, in [0,1]. Higher means closer
+  grayscale agreement, not better image quality.
+- `phash64`: a 16-digit hexadecimal DCT pHash with algorithm identifier
+  `dct-ii-32-low8-ac-median-v1`, alongside the unchanged `dhash64`.
+
+These use a **white composite**, like the existing edge grid and dHash, not the
+background-independent color measurements. Fully transparent images behave like
+white: zero variation, perfect mirror similarity, and a zero hash. Tiny inputs
+are resized to the fixed working resolutions. Color-only differences may be lost.
+
+The pHash uses an orthonormal 32×32 DCT-II and the median of the top-left 8×8 AC
+coefficients; the DC bit is forced to zero (63 data bits in a 64-bit container).
+Use Hamming distance only between hashes with the same algorithm identifier.
+Equal hashes do not prove identical images; all uniform intensities collide.
+`PROTOCOL.md` specifies resizing, rounding, thresholds, and bit packing.
+
+Human output shows the variation grid, mirror similarities, and identified hash;
+JSON/JSONL expose the same measurements. None is a beauty, quality, focus, or
+wallpaper-suitability score.
 
 Safety ceilings remain: 64 MiB encoded input, 500 megapixels in source headers,
 and bounded decoder memory/time. This does not promise every 500MP image can

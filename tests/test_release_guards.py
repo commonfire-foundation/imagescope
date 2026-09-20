@@ -95,7 +95,7 @@ class ReleaseGuardTests(unittest.TestCase):
             def check_model(self, model):
                 return {'name': model, 'padding': 'x' * MAX_EVENT_BYTES}, {}
 
-            def describe(self, *args):
+            def describe(self, *args, profile):
                 return dict(VISION), {}
 
         data = io.BytesIO()
@@ -104,13 +104,16 @@ class ReleaseGuardTests(unittest.TestCase):
         self.assertEqual(result['error']['code'], 'output_too_large')
 
     def test_malformed_endpoints_in_doctor_and_describe(self):
+        data = io.BytesIO()
+        Image.new('RGB', (8, 8), 'red').save(data, 'PNG')
         for endpoint in ('http://[', 'http://localhost:bad', 'http://localhost:65536',
                          'http://localhost:0', 'http://user:pass@localhost', 'http://local host'):
             for command in ('doctor', 'describe'):
                 for flags in ([], ['--json']):
-                    args = [command] + (['missing.png'] if command == 'describe' else [])
+                    args = [command] + (['--stdin'] if command == 'describe' else [])
                     p = subprocess.run([sys.executable, '-m', 'imagescope', *args,
                                         '--endpoint', endpoint, *flags], cwd=ROOT,
+                                       input=data.getvalue() if command == 'describe' else None,
                                        capture_output=True, timeout=10)
                     self.assertEqual(p.returncode, 2, p.stderr)
                     self.assertNotIn(b'Traceback', p.stderr)

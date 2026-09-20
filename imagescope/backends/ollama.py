@@ -9,9 +9,10 @@ from urllib.parse import urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from ..contracts import AnalyzerError, DEFAULT_ENDPOINT, strict_json_loads
-from ..profiles.wallpaper import SCHEMA, VISION_PROMPT, validate_description, clean_description
+from ..profiles import get_profile
 
-JSON_PREFIX = '{"caption":'
+# Retained for callers of the original wallpaper helper.
+JSON_PREFIX = get_profile('wallpaper').json_prefix
 
 
 class VisionResponseError(AnalyzerError, ValueError):
@@ -87,25 +88,27 @@ class OllamaBackend:
             self.identities[model] = (identity, self.request('version'))
         return self.identities[model]
 
-    def settings(self, preview_size):
-        return {'preview_size': preview_size, 'json_prefix': JSON_PREFIX,
+    def settings(self, preview_size, *, profile='wallpaper'):
+        return {'preview_size': preview_size, 'json_prefix': get_profile(profile).json_prefix,
                 'think': False, 'num_ctx': 4096, 'num_predict': 1024,
                 'temperature': 0, 'seed': 42, 'keep_alive': self.keep_alive}
 
-    def describe(self, image, model, preview_size):
-        return describe_image(image, model, preview_size, transport=self.request, keep_alive=self.keep_alive)
+    def describe(self, image, model, preview_size, *, profile='wallpaper'):
+        return describe_image(image, model, preview_size, transport=self.request,
+                              keep_alive=self.keep_alive, profile=profile)
 
 
-def describe_image(image, model, preview_size=768, *, transport, keep_alive=300):
+def describe_image(image, model, preview_size=768, *, transport, keep_alive=300, profile='wallpaper'):
+    profile = get_profile(profile)
     preview = image.copy()
     preview.thumbnail((preview_size, preview_size))
     buffer = io.BytesIO()
     preview.save(buffer, format="JPEG", quality=90)
     response = transport("chat", {
-        "model": model, "stream": False, "think": False, "format": SCHEMA,
-        "messages": [{"role": "user", "content": VISION_PROMPT,
+        "model": model, "stream": False, "think": False, "format": profile.schema,
+        "messages": [{"role": "user", "content": profile.prompt,
                       "images": [base64.b64encode(buffer.getvalue()).decode()]},
-                     {"role": "assistant", "content": JSON_PREFIX}],
+                     {"role": "assistant", "content": profile.json_prefix}],
         "options": {"temperature": 0, "seed": 42, "num_ctx": 4096, "num_predict": 1024},
         "keep_alive": keep_alive,
     })
@@ -127,11 +130,11 @@ def describe_image(image, model, preview_size=768, *, transport, keep_alive=300)
             raise ValueError("Model returned no final JSON content")
         # Ollama may return a continuation or a complete object. Never parse thinking.
         text = content.lstrip()
-        description = validate_description(strict_json_loads(text if text.startswith("{") else JSON_PREFIX + content))
+        description = profile.validate(strict_json_loads(text if text.startswith("{") else profile.json_prefix + content))
     except (ValueError, TypeError) as exc:
         details["vision_response"]["content"] = str(content)[:8192]
         raise VisionResponseError(str(exc), details) from exc
-    cleaned = clean_description(description)
+    cleaned = profile.clean(description)
     if cleaned != description:
         details["vision_raw"] = description
     return cleaned, details
