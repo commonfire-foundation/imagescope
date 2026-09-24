@@ -11,9 +11,17 @@ from PIL import Image
 
 from .contracts import (AnalyzerError, MAX_INPUT_BYTES, MAX_SOURCE_PIXELS,
                         DECODE_TIMEOUT, MAX_DECODE_OUTPUT_BYTES, WORKING_IMAGE_SIZE,
-                        strict_json_loads)
+                        strict_json_loads, validate_region)
 
 EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif'}
+
+
+def stored_dimensions(image):
+    """TIFF plugins may expose already-oriented .size; IFD dimensions stay stored."""
+    if image.format == 'TIFF':
+        tags = getattr(image, 'tag_v2', {})
+        return tags.get(256, image.width), tags.get(257, image.height)
+    return image.size
 
 
 def white_composite(image):
@@ -26,8 +34,8 @@ def white_composite(image):
     return background.convert('RGB')
 
 
-def prepare_image(source):
-    """Return metadata and an oriented, bounded RGB/RGBA image retaining alpha."""
+def read_source(source):
+    """Read a bounded input snapshot without decoding pixels."""
     try:
         if isinstance(source, Path):
             before = source.stat()
@@ -44,9 +52,23 @@ def prepare_image(source):
             data = source
         if len(data) > MAX_INPUT_BYTES:
             raise AnalyzerError('input_too_large', 'Image exceeds the 64 MiB input limit')
+        return data
+    except (OSError, ValueError) as exc:
+        raise AnalyzerError('invalid_input', f'Cannot read image: {exc}') from exc
+
+
+def prepare_image(source, *, color_policy='legacy-v1', assume_srgb=False, region=None):
+    """Return metadata and an oriented, bounded RGB/RGBA image retaining alpha."""
+    try:
+        from .color_management import validate_color_policy
+        validate_color_policy(color_policy, assume_srgb)
+        validate_region(region)
+        data = read_source(source)
         try:
             process = subprocess.run(
-                [sys.executable, '-m', 'imagescope.decode_worker', str(MAX_SOURCE_PIXELS), str(os.getpid())],
+                [sys.executable, '-m', 'imagescope.decode_worker', str(MAX_SOURCE_PIXELS), str(os.getpid()),
+                 'decode', color_policy, '1' if assume_srgb else '0',
+                 ','.join(map(str, region)) if region is not None else ''],
                 input=data, capture_output=True, timeout=DECODE_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
             raise AnalyzerError('decode_timeout', f'Image decoding exceeded {DECODE_TIMEOUT} seconds') from exc
@@ -57,7 +79,8 @@ def prepare_image(source):
         try:
             result = strict_json_loads(process.stdout)
             if 'error' in result:
-                raise AnalyzerError(result['error']['code'], result['error']['message'])
+                raise AnalyzerError(result['error']['code'], result['error']['message'],
+                                    result['error'].get('details'))
             if process.returncode:
                 raise ValueError('Decoder failed')
             metadata = result['metadata']

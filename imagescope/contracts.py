@@ -24,6 +24,21 @@ class AnalyzerError(Exception):
         self.details = details or {}
 
 
+def validate_region(region, *, source_size=None):
+    """Validate half-open pixel edges; source dimensions are checked in the worker."""
+    if region is None:
+        return
+    if (not isinstance(region, tuple) or len(region) != 4
+            or any(type(value) is not int or not 0 <= value <= MAX_SOURCE_PIXELS for value in region)):
+        raise AnalyzerError('invalid_request', 'region must be a tuple of four nonnegative integer pixel edges')
+    left, top, right, bottom = region
+    if left >= right or top >= bottom:
+        raise AnalyzerError('invalid_request', 'region must have positive width and height')
+    if source_size is not None and (right > source_size[0] or bottom > source_size[1]):
+        raise AnalyzerError('invalid_request',
+                            f'Region exceeds oriented source dimensions {source_size[0]}x{source_size[1]}')
+
+
 @dataclass(frozen=True)
 class AnalysisRequest:
     source: Path | bytes
@@ -36,8 +51,21 @@ class AnalysisRequest:
     timeout: float = 300
     keep_alive: int = 300
     palette_size: int = 6
+    color_policy: str = 'legacy-v1'
+    assume_srgb: bool = False
+    region: tuple[int, int, int, int] | None = None
+    histograms: bool = False
 
     def validate(self):
+        from .color_management import validate_color_policy
+        validate_color_policy(self.color_policy, self.assume_srgb)
+        validate_region(self.region)
+        if type(self.histograms) is not bool:
+            raise AnalyzerError('invalid_request', 'histograms must be boolean')
+        if self.histograms and self.task == 'describe' and not self.measurements:
+            raise AnalyzerError('invalid_request', 'describe histograms require measurements=True')
+        if self.region is not None and self.task != 'inspect':
+            raise AnalyzerError('invalid_request', 'region is supported only for inspect')
         if not isinstance(self.source, (Path, bytes)):
             raise AnalyzerError('invalid_request', 'source must be a pathlib.Path or image bytes')
         if self.task not in ('inspect', 'describe'):

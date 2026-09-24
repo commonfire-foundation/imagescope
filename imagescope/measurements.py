@@ -123,9 +123,14 @@ def spatial_color(image):
             'regions': regions}
 
 
-def measure(image, palette_size=6):
+def measure(image, palette_size=6, *, histograms=False):
+    if type(histograms) is not bool:
+        raise ValueError('histograms must be boolean')
     measurements = {'palette': extract_palette(image, palette_size)}
-    thumb, _ = _palette_thumbnail(image)
+    thumb, opaque = _palette_thumbnail(image)
+    if histograms:
+        from .histograms import histogram_statistics
+        measurements['histograms'] = histogram_statistics(thumb, working_size=image.size, opaque=opaque)
     measurements['color_distribution'], measurements['luminance_distribution'] = distributions(thumb)
     measurements['palette_distances'] = palette_distances(measurements['palette'])
     measurements['transparency'] = transparency(image)

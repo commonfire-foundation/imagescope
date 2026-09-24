@@ -79,6 +79,21 @@ def show_result(result, stream=None):
     data = result['input']
     prediction = result['predictions']
     paragraph(f"{data['width']} × {data['height']} · {data['format']}", stream)
+    region = result.get('provenance', {}).get('preprocessing', {}).get('region')
+    if region:
+        bounds = ', '.join(map(str, region['bounds']))
+        width, height = region['working_size']
+        paragraph(f'Region: [{bounds}] (half-open) · {width} × {height} working pixels', stream)
+        paragraph('Visible bounds are local to the working crop; ROI uses oriented source pixels.', stream)
+    color = result.get('provenance', {}).get('preprocessing', {}).get('color_management')
+    if color and color.get('status'):
+        labels = {'converted': 'converted to sRGB', 'declared_srgb': 'source declares sRGB',
+                  'assumed_srgb': 'sRGB explicitly assumed',
+                  'unmanaged': 'unmanaged; source color space unknown'}
+        label = labels.get(color['status'], color['status'])
+        if color['status'] == 'unmanaged' and color.get('source_interpretation') == 'declared_srgb':
+            label = 'unmanaged; source declares sRGB'
+        paragraph(f"Color: {color['policy']} · {label}", stream)
     if prediction:
         print(file=stream)
         from .profiles import get_profile
@@ -96,6 +111,17 @@ def show_result(result, stream=None):
     if measurements:
         print(file=stream)
         paragraph('Measurements', stream)
+        histograms = measurements.get('histograms')
+        if histograms:
+            width, height = histograms['sampling']['sample_size']
+            paragraph(f'Histograms: 256 bins · {width} × {height} sample · opacity-weighted', stream, indent='  ')
+            endpoints = histograms['endpoint_occupancy']
+            black, white = endpoints['all_channels_zero_fraction'], endpoints['all_channels_max_fraction']
+            if black is None:
+                paragraph('Sampled endpoints: undefined (no visible pixels)', stream, indent='  ')
+            else:
+                paragraph(f'Sampled endpoints: {black:.1%} black · {white:.1%} white; not proof of clipping',
+                          stream, indent='  ')
         palette = '  '.join(color['hex'] for color in measurements['palette'])
         paragraph('Palette: ' + (palette or 'none (no visible pixels)'), stream, indent='  ')
         paragraph(f"Luminance: {measurements['mean_luminance']:.3f} · spread {measurements['luminance_std']:.3f}",

@@ -182,6 +182,27 @@ version-1 contract.
 In a source checkout, replace `imagescope` with `python -m imagescope`.
 Paths beginning with `-` can be supplied after `--`.
 
+## Metadata without pixel decoding
+
+Use the dedicated metadata API when you need headers rather than measurements:
+
+```sh
+imagescope metadata image.png --json
+```
+
+```python
+from pathlib import Path
+from imagescope import MetadataRequest, inspect_metadata
+
+result = inspect_metadata(MetadataRequest(Path('image.png')))
+```
+
+This returns stored/oriented dimensions, original mode, bounded EXIF and ICC
+information, and sequence metadata without loading a raster or contacting a model.
+Unavailable metadata is explicitly marked; GIF/TIFF counts may be unknown rather
+than triggering frame traversal. No color conversion is performed. The separate
+metadata-v1 contract, resource limits, and PNG/EXIF caveats are in `METADATA.md`.
+
 ## Analysis modes
 
 | Mode | Output | Model required? |
@@ -233,8 +254,9 @@ Text detection is not OCR. Native image metadata is not rewritten.
 
 Supported formats: JPEG, PNG, WebP, BMP, TIFF, GIF. Large originals are analyzed
 through a working image no larger than 2048px on its longest side; the model
-preview is then reduced to the requested size (768px by default). JPEG decoding
-uses native reduced-resolution loading before allocating the raster. Other
+preview is then reduced to the requested size (768px by default). Default/legacy
+JPEG decoding uses native reduced-resolution loading before allocating the raster.
+The opt-in sRGB policy converts before reduction and disables that optimization. Other
 formats may require a full raster internally, but decoding happens in a separate
 process with a 1.5 GiB address-space budget, a CPU budget below 30 seconds, and a
 30-second wall-clock limit. Alpha-bearing images convert to RGBA before reduction
@@ -242,12 +264,49 @@ so indexed transparency and hidden RGB are handled correctly; those copies remai
 inside the decoder's resource budget. EXIF orientation follows reduction.
 
 Original oriented dimensions and SHA-256 always describe the original input,
-not the working preview. Preprocessing version 3 records working dimensions,
-decoder strategy, downsampling, and alpha handling. Measurements version 6 adds
+not the working preview. Preprocessing version 3 (legacy) or 4 (opt-in sRGB)
+records working dimensions, decoder strategy, downsampling, alpha handling, and
+explicit color-policy provenance. Measurements version 6 adds
 regional intensity variation, mirror similarity, and a DCT perceptual hash to
 version 5's transparency/spatial colors and version 4's color/luminance statistics. Legacy luminance mean/spread,
 dHash, and edge density still use a white composite. Existing saved results are
 not rewritten.
+
+### Explicit color handling
+
+Existing results remain reproducible under the default `legacy-v1` policy: no
+embedded ICC transform is applied, and unknown source color space is reported.
+To opt into color-managed measurements or descriptions:
+
+```sh
+imagescope inspect profiled-image.jpg --color-policy srgb-v1 --json
+imagescope inspect untagged-image.png --color-policy srgb-v1 --assume-srgb --json
+```
+
+The Python equivalents are `AnalysisRequest(source, task='inspect',
+color_policy='srgb-v1', assume_srgb=False)`. A valid embedded profile is converted
+with relative-colorimetric intent, transform optimization disabled for numerical
+fidelity, and no black-point compensation. Untagged input
+requires `--assume-srgb` unless it declares sRGB via PNG metadata; malformed profiles
+never fall back to an assumption. Alpha is preserved, and conversion runs inside
+the bounded worker **before reduction**. Large images may hit resource limits
+sooner than in legacy mode. Metadata-only inspection remains read-only and does
+not convert pixels. See `COLOR_POLICY.md` for modes, provenance, and limitations.
+
+### Inspect a proposed crop
+
+```sh
+imagescope inspect image.png --region 100 50 900 650 --json
+```
+
+The Python equivalent is `AnalysisRequest(source, task='inspect',
+region=(100, 50, 900, 650))`. Bounds are half-open original-pixel coordinates
+**after EXIF orientation**, not preview coordinates. The crop is selected before
+reduction, and the existing measurements describe only that region. No image is
+written and no model is used. Results retain original source identity plus crop
+and sampling provenance. Large sources may still require full decoding within the
+existing resource limits. See `REGION_INSPECTION.md` for coordinate mapping and why
+reduced visible-content bounds must not be treated as exact source crop boundaries.
 
 ### Extracted colors
 
@@ -275,7 +334,8 @@ and are not necessarily colors in that preview. Alpha-aware resizing uses
 premultiplied encoded sRGB with 8-bit precision, not linear-light color mixing.
 Opaque default extraction keeps the existing behavior. See `PROTOCOL.md` for
 quantization, rounding, and resizing details. No semantic theme roles or generated
-Base16/Base24 schemes are implied by extracting 16 or 24 colors.
+Base16/Base24 schemes are implied by extracting 16 or 24 colors. Scheme generation
+and theme export belong to tools consuming Imagescope output, not Imagescope.
 
 ### Color and luminance distributions
 
@@ -300,6 +360,25 @@ minimum palette distance; JSON/JSONL contain the complete statistics. The legacy
 `mean_luminance` can differ because it measures the **white composite**. These
 statistics are not beauty, image-quality, or suitability scores. `PROTOCOL.md`
 specifies units, rounding, color conversions, and thresholds.
+
+### Editing histograms
+
+```sh
+imagescope inspect image.png --histograms --json
+imagescope inspect image.png --region 100 50 900 650 --histograms --json
+```
+
+Opt into 256-bin RGB and linear-luminance histograms with `histograms=True` in an
+`AnalysisRequest`. Describe also requires `--measurements`. Counts are integer
+opacity mass over the existing at-most-256×256 thumbnail, not full-source pixel
+counts. Sampling and alpha weighting are explicit; zero/max endpoint shares are
+reported without claiming that endpoints prove clipping. Fully transparent samples
+have zero counts and undefined endpoint shares.
+
+Opt-in results use measurements version 7; ordinary requests retain version 6 and
+unchanged values/shape. Compare before/after results only with matching color,
+preprocessing, region, and sampling settings. See `HISTOGRAMS.md` for exact bins,
+normalization, endpoint definitions, and limitations.
 
 ### Transparency and regional colors
 

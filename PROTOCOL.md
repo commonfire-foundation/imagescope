@@ -5,6 +5,11 @@ Both event envelopes and results are versioned independently. Initial versions:
 not guess at their meaning. Additive fields may be ignored within version 1;
 required field removal or incompatible type/meaning changes require a new version.
 
+The dedicated `metadata` command uses the separate metadata-v1 contract documented
+in `METADATA.md`, not these analysis result/event envelopes. Discovery additionally
+advertises `metadata_version: 1`. Existing analysis versions and semantics are
+unchanged.
+
 ## Discovery and requests
 
 `imagescope info --json` returns program/version, protocol/schema versions,
@@ -106,6 +111,75 @@ that keyword; no silent fallback to wallpaper-only methods is attempted. Ollama'
 standalone helpers still default to wallpaper. Package 0.1.0 and protocol/schema 1
 remain unchanged: existing wallpaper payloads retain their shape; the new profile
 is explicitly selected. Preprocessing remains version 3; current measurements are version 6 (see below).
+
+## Explicit color policies
+
+Analysis requests additionally accept `color_policy` (`legacy-v1`, default, or
+`srgb-v1`) and `assume_srgb` (boolean, default false; requires `srgb-v1`). The CLI
+exposes `--color-policy` and `--assume-srgb` on inspect/describe. Discovery lists
+`color_policies` and `default_color_policy`. Metadata-only requests are unchanged.
+
+`COLOR_POLICY.md` specifies the versioned algorithm. Default preprocessing remains
+version 3 with unchanged pixels; opt-in sRGB conversion uses preprocessing version
+4, before reduction/orientation/compositing. Both retain measurement algorithms
+version 6. Color provenance is additive under schema/protocol 1 and lives in
+`provenance.preprocessing.color_management`. On color failure, the requested
+policy remains in provenance and available source details are in
+`diagnostics.color_management`; no model is contacted.
+
+Structured color failures include `unknown_color_space`, `unsupported_color_mode`,
+`color_management_unavailable`, `invalid_color_profile`, `color_profile_too_large`,
+and `color_conversion_failed`. Existing decoding resource errors still apply.
+An explicit assumption never overrides an invalid embedded profile. Human output
+also identifies unmanaged, converted, declared, or explicitly assumed colors.
+
+The historical measurement sections below describe the default **legacy-v1**
+input preparation. Their statements that ICC is not transformed do not apply to
+`srgb-v1`. Sampling/formulas remain the same; compare results only with matching
+color policy, preprocessing version, and measurement settings.
+
+## Region inspection (ROI version 1)
+
+Inspect requests optionally accept `region=(left, top, right, bottom)`; the CLI
+uses `--region LEFT TOP RIGHT BOTTOM`. Coordinates are half-open integer pixel
+edges in the EXIF-oriented original. Invalid shapes, empty rectangles, out-of-bounds
+regions, and use with describe are rejected as `invalid_request`.
+
+Region requests use preprocessing version 5, existing measurements version 6,
+and schema/protocol 1. They apply color handling, orientation, and cropping before
+working-image reduction; native reduced JPEG decoding is disabled. Source identity
+and input dimensions remain original-image metadata. All measurements describe the
+crop. Provenance records ROI version 1, original bounds, source/crop/working sizes,
+and rational working-to-source edge mapping. `downsampled` refers to reduction of
+the crop, not simply selecting a smaller area. Discovery advertises
+`region_inspection` with version, supported tasks, and coordinate space.
+
+See `REGION_INSPECTION.md` for the complete mapping, sampling, memory-limit, and
+preview-rounding contract. Working transparency bounds are not exact source-alpha
+bounds. Existing whole-image requests retain their pixel behavior and preprocessing
+versions. TIFF dimension reporting is corrected to use stored IFD dimensions before
+EXIF orientation, avoiding double-swapping on newer Pillow versions.
+
+## Optional histograms (measurements version 7)
+
+`AnalysisRequest.histograms` is a boolean, default false; CLI `--histograms` opts
+in. Inspect already measures; describe additionally requires `measurements=True`
+or `--measurements`. Without opt-in, results retain measurements version 6, all
+existing values, and their existing shape/settings. With opt-in, measurement
+provenance records version 7 and `measurement_settings.histograms: true`.
+
+`measurements.histograms` (version 1) adds 256-bin integer-alpha-weighted RGB and
+linear-sRGB luminance arrays, total opacity mass, visible sampled pixels, sampling
+provenance, and exact sampled endpoint fractions. The existing palette/distribution
+thumbnail bounds sampling at 256×256. Existing measurement algorithms are unchanged.
+Histogram counts sum to total alpha mass, not pixel count; fully invisible samples
+produce zero arrays and null endpoint fractions. Endpoint occupancy is not proof
+of clipping. The complete contract and comparison rules are in `HISTOGRAMS.md`.
+
+Discovery advertises `histograms` with version, measurement version, opt-in status,
+and bin count. ROI and explicit color policies compose with histograms; analysis
+schema/protocol and preprocessing versions are unchanged. JSONL failure results
+retain completed histograms if a subsequent inference step fails.
 
 ## Palette extraction (measurements version 3)
 

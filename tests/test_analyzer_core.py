@@ -94,8 +94,8 @@ class CoreTests(unittest.TestCase):
     def test_preprocessing_uses_request_timeout_budget(self):
         clock = [100.0]
         from imagescope.images import prepare_image
-        def prepare(source):
-            prepared = prepare_image(source)
+        def prepare(source, **kwargs):
+            prepared = prepare_image(source, **kwargs)
             clock[0] += 4
             return prepared
         with patch('imagescope.api.time.monotonic', side_effect=lambda: clock[0]), \

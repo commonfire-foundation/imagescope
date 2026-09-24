@@ -31,16 +31,27 @@ def analyze(request: AnalysisRequest, *, backend: Backend | None = None, on_prog
     try:
         request.validate()
         profile = get_profile(request.profile)
-        result['provenance']['preprocessing'] = {'version': 3, 'orientation': 'exif',
-                                                'alpha_background': '#ffffff', 'frame': 0}
-        progress('preparing', 'Preparing image')
-        metadata, image = prepare_image(request.source)
+        result['provenance']['preprocessing'] = {
+            'version': 5 if request.region is not None else (3 if request.color_policy == 'legacy-v1' else 4),
+            'orientation': 'exif', 'alpha_background': '#ffffff', 'frame': 0,
+            'color_management': {'policy': request.color_policy, 'assume_srgb': request.assume_srgb}}
+        if request.region is not None:
+            result['provenance']['preprocessing']['region'] = {
+                'version': 1, 'bounds': list(request.region),
+                'coordinate_space': 'exif-oriented-original-pixel-edges'}
+        progress('preparing', 'Preparing image region' if request.region is not None else 'Preparing image')
+        metadata, image = prepare_image(request.source, color_policy=request.color_policy,
+                                        assume_srgb=request.assume_srgb, region=request.region)
         result['provenance']['preprocessing'].update(metadata.pop('preprocessing'))
         result['input'].update(metadata)
         if request.measurements or request.task == 'inspect':
-            result['measurements'] = measure(image, request.palette_size)
+            result['measurements'] = measure(image, request.palette_size, histograms=request.histograms)
             result['provenance']['measurements_version'] = MEASUREMENTS_VERSION
             result['provenance']['measurement_settings'] = {'palette_size': request.palette_size}
+            if request.histograms:
+                from .histograms import HISTOGRAM_MEASUREMENTS_VERSION
+                result['provenance']['measurements_version'] = HISTOGRAM_MEASUREMENTS_VERSION
+                result['provenance']['measurement_settings']['histograms'] = True
         if request.task == 'describe':
             progress('checking', 'Checking local model')
             if backend is None:
