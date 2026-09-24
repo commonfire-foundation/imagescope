@@ -78,16 +78,13 @@ imagescope describe image.png --profile general --json
   `profile` keyword; consumers must distinguish measurements from predictions.
 - Linux only; no GUI, catalog, automatic model management, or cloud fallback.
 
-## Verification and publication gates
+## Verification and follow-up
 
-The exact RC1 package must pass the Python 3.11–3.14 suite, wheel/source builds,
-installed-package smoke tests, and archive metadata/license checks. Results and
-remaining gates are recorded in `RELEASE_PLAN.md`.
-
-Publication is gated on hosted CI and final artifact verification. The owner's
-actual-terminal visual check remains pending for stable 0.1.0; automated PTY
-checks cover animation, cleanup, cancellation, and narrow-terminal behavior.
-This remaining manual check is disclosed rather than claimed complete for RC1.
+RC1 is published as a GitHub prerelease. Before using the release artifacts,
+verify their published checksums. The owner's actual-terminal visual check
+remains pending for stable 0.1.0; automated PTY checks cover animation, cleanup,
+cancellation, and narrow-terminal behavior. This remaining manual check is
+disclosed rather than claimed complete for RC1.
 
 Report issues in the canonical repository. Include `imagescope --version`,
 Python/Ollama versions, the command, and sanitized output. Do not upload private

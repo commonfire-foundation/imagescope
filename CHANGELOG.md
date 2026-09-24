@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add metadata-v1 inspection without pixel decoding via Python and CLI.
+- Add opt-in `srgb-v1` color management with explicit conversion provenance;
+  retain legacy color behavior by default.
+- Add EXIF-oriented region inspection and opt-in sampled RGB/luminance histograms.
+  Default measurement output remains unchanged.
+- Keep internal development plans local and out of release archives.
 - Recommend `uv tool` for isolated Omarchy/user installation, with explicit
   artifact replacement, PATH guidance, and managed uninstall. Document pipx as
   an alternative and project virtual environments for development.

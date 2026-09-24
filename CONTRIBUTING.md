@@ -45,7 +45,8 @@ measurement revisions have their own versions and must not change silently.
 
 ## Release checklist
 
-See `RELEASE_PLAN.md` for the scoped 0.1.0 release gates and verification record.
+Follow the release's own acceptance criteria and verify the exact tagged source
+and distribution artifacts before publication.
 
 - Confirm package-name availability before public release.
 - Preserve the MIT license and copyright notice in release distributions.
