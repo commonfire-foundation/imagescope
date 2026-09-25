@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imagescope"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Stateless local image recognition and pixel measurements"
 readme = "README.md"
 license = "MIT"
@@ -19,9 +19,9 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/commonfire-org/imagescope"
-Issues = "https://github.com/commonfire-org/imagescope/issues"
-Changelog = "https://github.com/commonfire-org/imagescope/blob/main/CHANGELOG.md"
+Repository = "https://github.com/commonfire-foundation/imagescope"
+Issues = "https://github.com/commonfire-foundation/imagescope/issues"
+Changelog = "https://github.com/commonfire-foundation/imagescope/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["build>=1.2"]

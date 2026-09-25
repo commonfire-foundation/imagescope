@@ -6,10 +6,10 @@ Local image understanding and measurement tools for applications, scripts, and p
 Git tag: `v0.1.0rc1`. This is a GitHub **pre-release**, not stable 0.1.0.
 
 Canonical repository:
-https://github.com/commonfire-org/imagescope
+https://github.com/commonfire-foundation/imagescope
 
 RC1 downloads:
-https://github.com/commonfire-org/imagescope/releases/tag/v0.1.0rc1
+https://github.com/commonfire-foundation/imagescope/releases/tag/v0.1.0rc1
 
 ## Included
 

@@ -57,15 +57,15 @@ system Python or requiring sudo. This assumes `uv` is installed; check with
 `uv --version`. Imagescope is not published to PyPI, so install a downloaded
 release artifact rather than `uv tool install imagescope`.
 
-Download the RC1 wheel and `SHA256SUMS` from:
+Download the RC2 wheel and `SHA256SUMS` from:
 
-https://github.com/commonfire-org/imagescope/releases/tag/v0.1.0rc1
+https://github.com/commonfire-foundation/imagescope/releases/tag/v0.1.0rc2
 
 From the download directory:
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS
-uv tool install --no-python-downloads ./imagescope-0.1.0rc1-py3-none-any.whl
+uv tool install --no-python-downloads ./imagescope-0.1.0rc2-py3-none-any.whl
 imagescope --version
 imagescope info --json
 ```
@@ -84,10 +84,10 @@ name conflict.
 ### Upgrade or reinstall
 
 Download and verify the desired release wheel, then repeat installation with
-`--force`. For example, reinstall RC1:
+`--force`. For example, reinstall RC2:
 
 ```sh
-uv tool install --force --no-python-downloads ./imagescope-0.1.0rc1-py3-none-any.whl
+uv tool install --force --no-python-downloads ./imagescope-0.1.0rc2-py3-none-any.whl
 ```
 
 For an upgrade, substitute the newly downloaded wheel's actual filename. This
@@ -110,9 +110,9 @@ cleanup. Uninstall with the same tool that installed the application.
 If you already use pipx, it provides the same isolated-tool approach:
 
 ```sh
-pipx install ./imagescope-0.1.0rc1-py3-none-any.whl
+pipx install ./imagescope-0.1.0rc2-py3-none-any.whl
 # Reinstall or replace with a newly downloaded wheel:
-pipx install --force ./imagescope-0.1.0rc1-py3-none-any.whl
+pipx install --force ./imagescope-0.1.0rc2-py3-none-any.whl
 pipx uninstall imagescope
 ```
 
@@ -582,12 +582,12 @@ versions are independent; consult `imagescope info --json` for discovery.
 
 ## Project status and licensing
 
-Release candidate: **0.1.0rc1**, targeting 0.1.0. Treat it as
+Release candidate: **0.1.0rc2**, targeting 0.1.0. Treat it as
 pre-release software; internal Python APIs are not stable. The canonical public
 repository is:
 
-https://github.com/commonfire-org/imagescope
+https://github.com/commonfire-foundation/imagescope
 
 No PyPI publication is implied. Licensed under the MIT License; see `LICENSE`.
-See `RELEASE_NOTES.md` for RC1
+See `RELEASE_NOTES_RC2.md` for RC2
 installation and limitations, and `CONTRIBUTING.md` for development guidance.

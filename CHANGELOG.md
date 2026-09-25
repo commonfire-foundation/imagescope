@@ -2,12 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0rc2 — 2026-09-25
+
+Second release candidate for 0.1.0. Git tag: `v0.1.0rc2`; distributed as a
+GitHub prerelease, not stable 0.1.0.
+
 - Add metadata-v1 inspection without pixel decoding via Python and CLI.
 - Add opt-in `srgb-v1` color management with explicit conversion provenance;
   retain legacy color behavior by default.
 - Add EXIF-oriented region inspection and opt-in sampled RGB/luminance histograms.
   Default measurement output remains unchanged.
 - Keep internal development plans local and out of release archives.
+- Update repository URLs after the move to CommonFIRE Foundation.
 - Recommend `uv tool` for isolated Omarchy/user installation, with explicit
   artifact replacement, PATH guidance, and managed uninstall. Document pipx as
   an alternative and project virtual environments for development.
